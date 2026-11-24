@@ -1,4 +1,4 @@
-import type { Level, Solid } from "./types.ts";
+import type { Level, LevelObject, Solid } from "./types.ts";
 
 /**
  * Greybox playground for Phase 1 (SPEC-0001).
@@ -66,8 +66,22 @@ function jumpCourse(): Solid[] {
   }));
 }
 
+const objects: LevelObject[] = [
+  // Straight-up spring next to the start, just for fun (peak ≈ 6 m).
+  { kind: "spring", pos: { x: -3, y: 0, z: -3 }, power: 20 },
+  // Diagonal spring that throws the hero onto the raised platform.
+  { kind: "spring", pos: { x: 1.5, y: 0, z: 12 }, power: 13, push: { x: 6, z: 0 } },
+  // Spring on top of the platform.
+  { kind: "spring", pos: { x: 7.5, y: 1.55, z: 13.5 }, power: 16 },
+  // Booster aimed up the 15° ramp: run onto it and fly over the platform.
+  { kind: "booster", pos: { x: 6, y: 0, z: 0.5 }, length: 2, width: 2.4, yaw: 0, speed: 20 },
+  // Booster lane towards the jump course (-X).
+  { kind: "booster", pos: { x: -10, y: 0, z: -4 }, length: 2, width: 2, yaw: -90, speed: 16 },
+];
+
 export const testLevel: Level = {
   name: "phase1-playground",
   spawn: { x: 0, y: 1, z: 0 },
   solids,
+  objects,
 };

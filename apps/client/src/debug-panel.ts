@@ -3,7 +3,7 @@ import { tuning } from "@cg/shared";
 const STORAGE_KEY = "cg-tuning-v1";
 
 /** Groups that are safe to edit live (capsule settings need a physics rebuild, so they are excluded). */
-const LIVE_GROUPS = ["move", "air", "jump"] as const;
+const LIVE_GROUPS = ["move", "air", "jump", "spinDash"] as const;
 type LiveGroup = (typeof LIVE_GROUPS)[number];
 
 /** Sensible slider ranges per field; anything missing gets an automatic range. */
@@ -22,6 +22,12 @@ const RANGES: Record<string, [number, number, number]> = {
   "jump.releaseCut": [0, 1, 0.05],
   "jump.coyoteTime": [0, 0.3, 0.01],
   "jump.bufferTime": [0, 0.3, 0.01],
+  "spinDash.levelTime": [0.1, 1, 0.05],
+  "spinDash.boost1": [0, 20, 0.5],
+  "spinDash.boost2": [0, 25, 0.5],
+  "spinDash.boost3": [0, 30, 0.5],
+  "spinDash.chargeBrake": [10, 150, 1],
+  "spinDash.rollDecel": [0, 30, 0.5],
 };
 
 type Numbers = Record<string, number>;

@@ -51,6 +51,22 @@ export const tuning = {
     /** s a press is remembered before landing */
     bufferTime: 0.12,
   },
+  spinDash: {
+    /** s of holding per charge level (3 levels) */
+    levelTime: 0.3,
+    /** m/s added on top of maxSpeed at charge levels 1, 2 and 3 */
+    boost1: 5,
+    boost2: 9,
+    boost3: 13,
+    /** m/s² braking while charging */
+    chargeBrake: 60,
+    /** m/s² slowdown of a rolling hero with no input (gentler than friction, so dashes carry) */
+    rollDecel: 6,
+  },
+  objects: {
+    /** Horizontal reach of a spring, m (added to the capsule radius) */
+    springRadius: 0.45,
+  },
   world: {
     /** Below this height the hero respawns. */
     killY: -15,

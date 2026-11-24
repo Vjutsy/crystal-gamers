@@ -5,6 +5,7 @@ export * from "./level/test-level.ts";
 export * from "./level/types.ts";
 export * from "./math.ts";
 export * from "./movement/mover.ts";
+export * from "./movement/objects.ts";
 export * from "./movement/replay.ts";
 export * from "./physics/world.ts";
 export * from "./rng.ts";

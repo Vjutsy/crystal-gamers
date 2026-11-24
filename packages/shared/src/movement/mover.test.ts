@@ -39,7 +39,7 @@ function sim(level: Level, input: InputFrame | ((tick: number) => InputFrame), t
   return { s, trace };
 }
 
-const fwd: InputFrame = { moveX: 0, moveZ: 1, jump: false };
+const fwd: InputFrame = { moveX: 0, moveZ: 1, jump: false, spin: false };
 
 beforeAll(async () => {
   await initPhysics();
@@ -61,12 +61,12 @@ describe("ground movement", () => {
   });
 
   it("diagonal input is not faster than straight input", () => {
-    const { s } = sim(levelWith(), { moveX: 1, moveZ: 1, jump: false }, 120);
+    const { s } = sim(levelWith(), { moveX: 1, moveZ: 1, jump: false, spin: false }, 120);
     expect(Math.hypot(s.vel.x, s.vel.z)).toBeCloseTo(tuning.move.maxSpeed, 3);
   });
 
   it("turns around faster than it accelerates from zero", () => {
-    const back: InputFrame = { moveX: 0, moveZ: -1, jump: false };
+    const back: InputFrame = { moveX: 0, moveZ: -1, jump: false, spin: false };
     const turn = sim(levelWith(), (i) => (i < 90 ? fwd : back), 90 + 120);
     const ticksToReverse = turn.trace.slice(90).findIndex((t) => t.vel.z < 0);
     const ticksToStop = Math.ceil(tuning.move.maxSpeed / tuning.move.accel / SIM_DT);
@@ -142,6 +142,7 @@ describe("determinism", () => {
       moveX: rng() * 2 - 1,
       moveZ: rng() * 2 - 1,
       jump: false,
+      spin: false,
     }));
     const level = levelWith(ramp(15), ramp(30, -8));
     const run = () => {

@@ -101,5 +101,5 @@ export function sanitizeInput(msg: unknown): InputFrame {
   const m = msg as Record<string, unknown>;
   const num = (v: unknown) =>
     typeof v === "number" && Number.isFinite(v) ? Math.max(-1, Math.min(1, v)) : 0;
-  return { moveX: num(m.moveX), moveZ: num(m.moveZ), jump: m.jump === true };
+  return { moveX: num(m.moveX), moveZ: num(m.moveZ), jump: m.jump === true, spin: m.spin === true };
 }

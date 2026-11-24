@@ -7,11 +7,12 @@ describe("sanitizeInput", () => {
       moveX: 1,
       moveZ: 0,
       jump: false,
+      spin: false,
     });
   });
 
   it("handles garbage", () => {
-    expect(sanitizeInput(null)).toEqual({ moveX: 0, moveZ: 0, jump: false });
-    expect(sanitizeInput("hack")).toEqual({ moveX: 0, moveZ: 0, jump: false });
+    expect(sanitizeInput(null)).toEqual({ moveX: 0, moveZ: 0, jump: false, spin: false });
+    expect(sanitizeInput("hack")).toEqual({ moveX: 0, moveZ: 0, jump: false, spin: false });
   });
 });
