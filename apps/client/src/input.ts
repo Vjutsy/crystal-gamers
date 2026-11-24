@@ -42,5 +42,6 @@ export function readInput(): InputFrame {
     moveX: (sy + sx) * k,
     moveZ: (sy - sx) * k,
     jump: held.has("Space"),
+    spin: held.has("ShiftLeft") || held.has("ShiftRight"),
   };
 }

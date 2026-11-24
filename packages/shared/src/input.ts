@@ -4,6 +4,8 @@ export interface InputFrame {
   moveX: number;
   moveZ: number;
   jump: boolean;
+  /** Spin dash: hold to charge, release to dash. */
+  spin: boolean;
 }
 
-export const NO_INPUT: InputFrame = { moveX: 0, moveZ: 0, jump: false };
+export const NO_INPUT: InputFrame = { moveX: 0, moveZ: 0, jump: false, spin: false };

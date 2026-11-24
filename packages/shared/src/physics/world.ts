@@ -1,5 +1,5 @@
 import RAPIER from "@dimforge/rapier3d-deterministic-compat";
-import type { Level } from "../level/types.ts";
+import type { Level, LevelObject } from "../level/types.ts";
 import { quatFromEulerDeg, type Vec3 } from "../math.ts";
 import { tuning } from "../tuning.ts";
 
@@ -36,8 +36,11 @@ export class PhysicsWorld {
   private controller: RAPIER.KinematicCharacterController;
   private characters = new Map<number, RAPIER.Collider>();
   private nextId = 1;
+  /** Springs, boosters, … (triggers, not colliders). */
+  readonly objects: readonly LevelObject[];
 
   constructor(level: Level) {
+    this.objects = level.objects ?? [];
     this.world = new RAPIER.World({ x: 0, y: 0, z: 0 });
     for (const s of level.solids) {
       const q = s.rot ? quatFromEulerDeg(s.rot[0], s.rot[1], s.rot[2]) : { x: 0, y: 0, z: 0, w: 1 };

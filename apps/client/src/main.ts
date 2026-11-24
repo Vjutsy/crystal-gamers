@@ -6,6 +6,7 @@ import { Engine } from "@babylonjs/core/Engines/engine";
 import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
 import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
 import { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
+import type { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { Color3, Color4 } from "@babylonjs/core/Maths/math.color";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { CreateCapsule } from "@babylonjs/core/Meshes/Builders/capsuleBuilder";
@@ -191,6 +192,23 @@ async function start() {
     const y = prev.pos.y + (mover.pos.y - prev.pos.y) * alpha;
     const z = prev.pos.z + (mover.pos.z - prev.pos.z) * alpha;
     localMesh.position.set(x, y, z);
+
+    // Spin dash look: squash while charging (pulsing faster per charge level), ball while rolling.
+    const glow = localMesh.material as StandardMaterial;
+    if (mover.spinCharge >= 0) {
+      const level = Math.min(3, 1 + Math.floor(mover.spinCharge / tuning.spinDash.levelTime));
+      const pulse = 0.5 + 0.5 * Math.sin(performance.now() / (120 - level * 25));
+      localMesh.scaling.set(1.15, 0.7, 1.15);
+      glow.emissiveColor.set(0.15 * level * pulse, 0.25 * level * pulse, 0.6 * level * pulse);
+    } else if (mover.rolling) {
+      localMesh.scaling.set(1.05, 0.55, 1.05);
+      glow.emissiveColor.set(0.1, 0.35, 0.9);
+    } else {
+      localMesh.scaling.set(1, 1, 1);
+      glow.emissiveColor.set(0, 0, 0);
+    }
+    // Keep the feet on the ground when squashed.
+    localMesh.position.y -= ((1 - localMesh.scaling.y) * capsuleHeight) / 2;
 
     const groundY = world.surfaceBelow({ x, y: y - FEET + 0.05, z }, 12);
     blob.isVisible = groundY !== null;

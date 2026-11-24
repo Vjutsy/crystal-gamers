@@ -2,6 +2,7 @@ import type { InputFrame } from "../input.ts";
 import type { Vec3 } from "../math.ts";
 import type { PhysicsWorld } from "../physics/world.ts";
 import { tuning } from "../tuning.ts";
+import { touchObjects } from "./objects.ts";
 
 /** Everything needed to continue a character's movement. Plain data: easy to send, copy and replay. */
 export interface MoverState {
@@ -16,6 +17,12 @@ export interface MoverState {
   jumpHeld: boolean;
   /** True while rising from a jump whose height can still be cut by releasing the button. */
   jumpCuttable: boolean;
+  /** Unit direction the hero faces on the ground plane (spin dash goes this way). */
+  facing: { x: number; z: number };
+  /** Seconds the spin dash has been charging, or -1 when not charging. */
+  spinCharge: number;
+  /** True after a spin dash until the hero slows back to normal running speed. */
+  rolling: boolean;
 }
 
 export function createMover(spawn: Vec3): MoverState {
@@ -27,6 +34,9 @@ export function createMover(spawn: Vec3): MoverState {
     jumpBuffer: 0,
     jumpHeld: false,
     jumpCuttable: false,
+    facing: { x: 0, z: 1 },
+    spinCharge: -1,
+    rolling: false,
   };
 }
 
@@ -49,11 +59,35 @@ export function stepMover(
   let { x: vx, y: vy, z: vz } = s.vel;
   const control = s.grounded ? 1 : t.air.control;
 
-  // --- Horizontal: accelerate towards the input direction, brake hard when turning back.
+  // --- Spin dash: hold to charge in place (input only turns the hero), release to dash.
   const inLen = Math.hypot(input.moveX, input.moveZ);
   const strength = Math.min(inLen, 1);
+  let facing = s.facing;
+  if (strength > 0) facing = { x: input.moveX / inLen, z: input.moveZ / inLen };
+  let rolling = s.rolling;
+  let spinCharge = s.spinCharge;
+  const jumpPressed = input.jump && !s.jumpHeld;
+  const charging = s.grounded && input.spin && !jumpPressed;
 
-  if (strength > 0) {
+  if (charging) {
+    spinCharge = Math.max(0, spinCharge) + dt;
+    rolling = false;
+    const speed = Math.hypot(vx, vz);
+    const k = speed > 0 ? Math.max(0, speed - t.spinDash.chargeBrake * dt) / speed : 0;
+    vx *= k;
+    vz *= k;
+  } else if (spinCharge >= 0) {
+    // Released (or interrupted). Dash only if still on the ground.
+    if (s.grounded) {
+      const level = Math.min(3, 1 + Math.floor(spinCharge / t.spinDash.levelTime));
+      const boost = level === 1 ? t.spinDash.boost1 : level === 2 ? t.spinDash.boost2 : t.spinDash.boost3;
+      const dashSpeed = t.move.maxSpeed + boost;
+      vx = facing.x * dashSpeed;
+      vz = facing.z * dashSpeed;
+      rolling = true;
+    }
+    spinCharge = -1;
+  } else if (strength > 0) {
     // Unit direction of the input; `strength` (0..1) scales the target speed for analog sticks.
     const dx = input.moveX / inLen;
     const dz = input.moveZ / inLen;
@@ -79,7 +113,7 @@ export function stepMover(
     vz = dz * along + perpZ;
   } else {
     const speed = Math.hypot(vx, vz);
-    const decel = t.move.friction * (s.grounded ? 1 : t.air.drag);
+    const decel = rolling ? t.spinDash.rollDecel : t.move.friction * (s.grounded ? 1 : t.air.drag);
     const k = speed > 0 ? Math.max(0, speed - decel * dt) / speed : 0;
     vx *= k;
     vz *= k;
@@ -141,11 +175,25 @@ export function stepMover(
   }
 
   // Rising through the snap distance must not count as landing.
-  const grounded = res.grounded && vy <= 0;
+  let grounded = res.grounded && vy <= 0;
   if (grounded) vy = 0;
 
   const pos = { x: s.pos.x + res.delta.x, y: s.pos.y + res.delta.y, z: s.pos.z + res.delta.z };
   if (pos.y < t.world.killY) return createMover(spawn);
+
+  // --- Springs and boosters.
+  const fx = touchObjects(world.objects, pos, { x: vx, y: vy, z: vz }, grounded);
+  if (fx.vx !== undefined) vx = fx.vx;
+  if (fx.vz !== undefined) vz = fx.vz;
+  if (fx.vy !== undefined) vy = fx.vy;
+  if (fx.launched) {
+    grounded = false;
+    jumpCuttable = false;
+    coyote = 0;
+    spinCharge = -1;
+  }
+
+  if (rolling && Math.hypot(vx, vz) <= t.move.maxSpeed) rolling = false;
 
   return {
     pos,
@@ -155,5 +203,8 @@ export function stepMover(
     jumpBuffer,
     jumpHeld: input.jump,
     jumpCuttable,
+    facing,
+    spinCharge,
+    rolling,
   };
 }
