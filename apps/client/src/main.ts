@@ -1,6 +1,7 @@
 import "@babylonjs/core/Lights/Shadows/shadowGeneratorSceneComponent";
 import { Camera } from "@babylonjs/core/Cameras/camera";
 import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { Constants } from "@babylonjs/core/Engines/constants";
 import { Engine } from "@babylonjs/core/Engines/engine";
 import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
 import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
@@ -24,6 +25,7 @@ import {
   testLevel,
   tuning,
 } from "@cg/shared";
+import { maybeShowDebugPanel } from "./debug-panel.ts";
 import { tr } from "./i18n.ts";
 import { bindKeyboard, readInput } from "./input.ts";
 import { buildLevel, makeMaterial } from "./level-view.ts";
@@ -98,6 +100,22 @@ function makeHero(color: string): Mesh {
 }
 
 const localMesh = makeHero(heroColors[0] ?? "#2f6bff");
+
+// Silhouette: a flat-coloured copy drawn only where the hero is hidden behind level geometry
+// (depth test GREATER), so the isometric camera never loses the player.
+const silhouetteMat = makeMaterial(scene, "silhouette", "#ffffff");
+silhouetteMat.disableLighting = true;
+silhouetteMat.emissiveColor = Color3.FromHexString("#7fb0ff");
+silhouetteMat.alpha = 0.55;
+silhouetteMat.depthFunction = Constants.GREATER;
+silhouetteMat.disableDepthWrite = true;
+const silhouette = localMesh.clone("silhouette");
+silhouette.material = silhouetteMat;
+silhouette.renderingGroupId = 1;
+silhouette.parent = localMesh;
+silhouette.position.set(0, 0, 0);
+// Keep group 0's depth buffer when drawing group 1, otherwise GREATER has nothing to compare with.
+scene.setRenderingAutoClearDepthStencil(1, false, false, false);
 
 // Blob shadow: in an isometric view it is the main cue for how high the hero is.
 const blob = CreateDisc("blob", { radius: tuning.capsule.radius * 1.1, tessellation: 24 }, scene);
@@ -195,6 +213,7 @@ async function start() {
   });
 }
 
+maybeShowDebugPanel();
 start();
 engine.runRenderLoop(() => scene.render());
 window.addEventListener("resize", () => {
