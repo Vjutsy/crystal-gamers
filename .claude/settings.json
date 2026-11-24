@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pnpm check)",
+      "Bash(pnpm test*)",
+      "Bash(pnpm typecheck)",
+      "Bash(pnpm lint)",
+      "Bash(pnpm format)",
+      "Bash(pnpm build)",
+      "Bash(git status)",
+      "Bash(git diff*)"
+    ]
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "pnpm -s typecheck && pnpm -s test || { echo 'Typecheck або тести не пройшли: виправ перед завершенням' >&2; exit 2; }"
+          }
+        ]
+      }
+    ]
+  }
+}
