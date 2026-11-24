@@ -1,9 +1,26 @@
 import type { InputFrame } from "@cg/shared";
 
 const held = new Set<string>();
+/** Keys the game uses; the browser must not scroll the page or move focus with them. */
+const GAME_KEYS = new Set([
+  "Space",
+  "ArrowUp",
+  "ArrowDown",
+  "ArrowLeft",
+  "ArrowRight",
+  "KeyW",
+  "KeyA",
+  "KeyS",
+  "KeyD",
+  "ShiftLeft",
+  "ShiftRight",
+]);
 
 export function bindKeyboard(target: Window) {
-  target.addEventListener("keydown", (e) => held.add(e.code));
+  target.addEventListener("keydown", (e) => {
+    if (GAME_KEYS.has(e.code)) e.preventDefault();
+    held.add(e.code);
+  });
   target.addEventListener("keyup", (e) => held.delete(e.code));
   target.addEventListener("blur", () => held.clear());
 }

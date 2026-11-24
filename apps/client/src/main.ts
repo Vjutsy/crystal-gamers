@@ -8,6 +8,7 @@ import { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator"
 import { Color3, Color4 } from "@babylonjs/core/Maths/math.color";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { CreateCapsule } from "@babylonjs/core/Meshes/Builders/capsuleBuilder";
+import { CreateDisc } from "@babylonjs/core/Meshes/Builders/discBuilder";
 import { CreatePolyhedron } from "@babylonjs/core/Meshes/Builders/polyhedronBuilder";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { Scene } from "@babylonjs/core/scene";
@@ -97,6 +98,15 @@ function makeHero(color: string): Mesh {
 }
 
 const localMesh = makeHero(heroColors[0] ?? "#2f6bff");
+
+// Blob shadow: in an isometric view it is the main cue for how high the hero is.
+const blob = CreateDisc("blob", { radius: tuning.capsule.radius * 1.1, tessellation: 24 }, scene);
+blob.rotation.x = Math.PI / 2;
+const blobMat = makeMaterial(scene, "blob", "#000000");
+blobMat.alpha = 0.35;
+blobMat.disableLighting = true;
+blob.material = blobMat;
+const FEET = tuning.capsule.halfHeight + tuning.capsule.radius;
 const remoteMeshes = new Map<string, Mesh>();
 let collected = 0;
 
@@ -163,6 +173,16 @@ async function start() {
     const y = prev.pos.y + (mover.pos.y - prev.pos.y) * alpha;
     const z = prev.pos.z + (mover.pos.z - prev.pos.z) * alpha;
     localMesh.position.set(x, y, z);
+
+    const groundY = world.surfaceBelow({ x, y: y - FEET + 0.05, z }, 12);
+    blob.isVisible = groundY !== null;
+    if (groundY !== null) {
+      const height = y - FEET - groundY;
+      const k = Math.max(0.35, 1 - height / 6);
+      blob.position.set(x, groundY + 0.02, z);
+      blob.scaling.set(k, k, k);
+      blobMat.alpha = 0.35 * k;
+    }
 
     // Camera follows with smoothing.
     follow.set(x, y - capsuleHeight / 2, z);
