@@ -7,8 +7,8 @@ import {
   SIM_DT,
   stepPlayer,
 } from "@cg/shared";
+import { type Client, Room } from "@colyseus/core";
 import { type SchemaType, schema, t } from "@colyseus/schema";
-import { type Client, Room } from "colyseus";
 
 export const PlayerState = schema(
   {
