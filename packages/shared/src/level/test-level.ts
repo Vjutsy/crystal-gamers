@@ -45,7 +45,26 @@ const solids: Solid[] = [
 
   // Walls to bump into.
   { pos: { x: 0, y: 1, z: -10 }, size: { x: 8, y: 2, z: 1 }, style: "block" },
+
+  // Jump course along -X: platforms with growing gaps and heights, ending on a tall tower.
+  ...jumpCourse(),
 ];
+
+/** Platforms at (x, top height); gaps grow from 1.5 m to 3.5 m. The last two stand over the void past the floor edge. */
+function jumpCourse(): Solid[] {
+  const steps: [number, number][] = [
+    [-15, 0.6],
+    [-18.5, 1.2],
+    [-22.5, 1.8],
+    [-27, 2.2],
+    [-32.5, 1.2],
+  ];
+  return steps.map(([x, top]) => ({
+    pos: { x, y: top / 2, z: -4 },
+    size: { x: 2, y: top, z: 2 },
+    style: "block" as const,
+  }));
+}
 
 export const testLevel: Level = {
   name: "phase1-playground",
