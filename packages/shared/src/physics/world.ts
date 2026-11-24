@@ -100,6 +100,13 @@ export class PhysicsWorld {
     return hit ? { x: hit.normal.x, y: hit.normal.y, z: hit.normal.z } : null;
   }
 
+  /** Height of the first level surface below `from` (within `maxDist`), or null. Used for the blob shadow. */
+  surfaceBelow(from: Vec3, maxDist: number): number | null {
+    const ray = new RAPIER.Ray(from, { x: 0, y: -1, z: 0 });
+    const hit = this.world.castRay(ray, maxDist, true, undefined, CHARACTER_GROUPS);
+    return hit ? from.y - hit.timeOfImpact : null;
+  }
+
   dispose() {
     this.world.free();
   }

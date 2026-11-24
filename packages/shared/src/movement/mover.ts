@@ -8,10 +8,26 @@ export interface MoverState {
   pos: Vec3;
   vel: Vec3;
   grounded: boolean;
+  /** Seconds of coyote time left (jumping is still allowed after leaving an edge). */
+  coyote: number;
+  /** Seconds a recent jump press is still remembered (jump buffer). */
+  jumpBuffer: number;
+  /** Jump button state on the previous tick, to detect new presses. */
+  jumpHeld: boolean;
+  /** True while rising from a jump whose height can still be cut by releasing the button. */
+  jumpCuttable: boolean;
 }
 
 export function createMover(spawn: Vec3): MoverState {
-  return { pos: { ...spawn }, vel: { x: 0, y: 0, z: 0 }, grounded: false };
+  return {
+    pos: { ...spawn },
+    vel: { x: 0, y: 0, z: 0 },
+    grounded: false,
+    coyote: 0,
+    jumpBuffer: 0,
+    jumpHeld: false,
+    jumpCuttable: false,
+  };
 }
 
 /** A wall is anything steeper than this (normal.y below it). */
@@ -31,6 +47,7 @@ export function stepMover(
 ): MoverState {
   const t = tuning;
   let { x: vx, y: vy, z: vz } = s.vel;
+  const control = s.grounded ? 1 : t.air.control;
 
   // --- Horizontal: accelerate towards the input direction, brake hard when turning back.
   const inLen = Math.hypot(input.moveX, input.moveZ);
@@ -43,17 +60,18 @@ export function stepMover(
     let along = vx * dx + vz * dz; // speed in the wished direction
     let perpX = vx - dx * along; // sideways drift
     let perpZ = vz - dz * along;
+    const turn = t.move.turnDecel * control;
 
     // Moving against the input: brake hard first (fast turnaround), then accelerate normally below.
-    if (along < 0) along = Math.min(0, along + t.move.turnDecel * dt);
+    if (along < 0) along = Math.min(0, along + turn * dt);
     const target = t.move.maxSpeed * strength;
-    if (along < target) along = Math.min(target, along + t.move.accel * dt);
-    else along = Math.max(target, along - t.move.overSpeedDecel * dt);
+    if (along < target) along = Math.min(target, along + t.move.accel * control * dt);
+    else if (s.grounded) along = Math.max(target, along - t.move.overSpeedDecel * dt);
 
     // Kill sideways drift quickly so steering feels grippy.
     const perp = Math.hypot(perpX, perpZ);
     if (perp > 0) {
-      const k = Math.max(0, perp - t.move.turnDecel * dt) / perp;
+      const k = Math.max(0, perp - turn * dt) / perp;
       perpX *= k;
       perpZ *= k;
     }
@@ -61,7 +79,8 @@ export function stepMover(
     vz = dz * along + perpZ;
   } else {
     const speed = Math.hypot(vx, vz);
-    const k = speed > 0 ? Math.max(0, speed - t.move.friction * dt) / speed : 0;
+    const decel = t.move.friction * (s.grounded ? 1 : t.air.drag);
+    const k = speed > 0 ? Math.max(0, speed - decel * dt) / speed : 0;
     vx *= k;
     vz *= k;
   }
@@ -74,11 +93,33 @@ export function stepMover(
     vz += g * ground.z * dt;
   }
 
-  // --- Vertical.
-  if (s.grounded) vy = 0;
-  else vy = Math.max(-t.air.maxFall, vy - t.air.gravity * dt);
+  // --- Jump: a new press is buffered; coyote time allows jumping just after leaving an edge.
+  const pressed = input.jump && !s.jumpHeld;
+  let jumpBuffer = pressed ? t.jump.bufferTime : Math.max(0, s.jumpBuffer - dt);
+  let coyote = s.grounded ? t.jump.coyoteTime : Math.max(0, s.coyote - dt);
+  let jumpCuttable = s.jumpCuttable;
+  let airborne = !s.grounded;
 
-  const desired = { x: vx * dt, y: s.grounded ? -0.02 : vy * dt, z: vz * dt };
+  if (jumpBuffer > 0 && (s.grounded || coyote > 0)) {
+    vy = t.jump.velocity;
+    jumpBuffer = 0;
+    coyote = 0;
+    jumpCuttable = true;
+    airborne = true;
+  } else if (s.grounded) {
+    vy = 0;
+  } else {
+    vy = Math.max(-t.air.maxFall, vy - t.air.gravity * dt);
+  }
+
+  // Releasing the button while rising cuts the jump short (variable height).
+  if (jumpCuttable && !input.jump && vy > 0) {
+    vy *= t.jump.releaseCut;
+    jumpCuttable = false;
+  }
+  if (vy <= 0) jumpCuttable = false;
+
+  const desired = { x: vx * dt, y: airborne ? vy * dt : -0.02, z: vz * dt };
   const res = world.move(id, s.pos, desired);
 
   // --- Remove the velocity that went into walls and ceilings, so speed never builds up against them.
@@ -95,12 +136,24 @@ export function stepMover(
       }
     } else if (n.y <= -WALL_NORMAL_Y && vy > 0) {
       vy = 0;
+      jumpCuttable = false;
     }
   }
-  if (res.grounded) vy = 0;
+
+  // Rising through the snap distance must not count as landing.
+  const grounded = res.grounded && vy <= 0;
+  if (grounded) vy = 0;
 
   const pos = { x: s.pos.x + res.delta.x, y: s.pos.y + res.delta.y, z: s.pos.z + res.delta.z };
   if (pos.y < t.world.killY) return createMover(spawn);
 
-  return { pos, vel: { x: vx, y: vy, z: vz }, grounded: res.grounded };
+  return {
+    pos,
+    vel: { x: vx, y: vy, z: vz },
+    grounded,
+    coyote,
+    jumpBuffer,
+    jumpHeld: input.jump,
+    jumpCuttable,
+  };
 }

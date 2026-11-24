@@ -36,6 +36,20 @@ export const tuning = {
     gravity: 32,
     /** m/s cap on falling speed */
     maxFall: 30,
+    /** 0..1 share of ground acceleration and turning available in the air */
+    control: 0.6,
+    /** 0..1 share of ground friction applied in the air when no direction is held */
+    drag: 0.15,
+  },
+  jump: {
+    /** m/s upward at take-off; peak height ≈ velocity² / (2 · gravity) */
+    velocity: 12,
+    /** Releasing the button while rising multiplies upward speed by this (short hop) */
+    releaseCut: 0.4,
+    /** s after leaving an edge during which a jump still works */
+    coyoteTime: 0.1,
+    /** s a press is remembered before landing */
+    bufferTime: 0.12,
   },
   world: {
     /** Below this height the hero respawns. */
