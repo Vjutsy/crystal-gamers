@@ -5,24 +5,27 @@ import { Engine } from "@babylonjs/core/Engines/engine";
 import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
 import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
 import { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
-import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { Color3, Color4 } from "@babylonjs/core/Maths/math.color";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
-import { CreateBox } from "@babylonjs/core/Meshes/Builders/boxBuilder";
 import { CreateCapsule } from "@babylonjs/core/Meshes/Builders/capsuleBuilder";
 import { CreatePolyhedron } from "@babylonjs/core/Meshes/Builders/polyhedronBuilder";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { Scene } from "@babylonjs/core/scene";
 import {
+  type Crystal,
   collectCrystals,
-  createPlayer,
-  type PlayerSim,
-  ringOfCrystals,
+  createMover,
+  initPhysics,
+  type MoverState,
+  PhysicsWorld,
   SIM_DT,
-  stepPlayer,
+  stepMover,
+  testLevel,
+  tuning,
 } from "@cg/shared";
 import { tr } from "./i18n.ts";
 import { bindKeyboard, readInput } from "./input.ts";
+import { buildLevel, makeMaterial } from "./level-view.ts";
 import { connect, type Net } from "./net.ts";
 
 const canvas = document.getElementById("game") as HTMLCanvasElement;
@@ -59,52 +62,19 @@ hemi.groundColor = new Color3(0.35, 0.3, 0.45);
 const sun = new DirectionalLight("sun", new Vector3(0.4, -1, 0.6), scene);
 sun.position = new Vector3(-20, 40, -30);
 sun.intensity = 0.9;
-const shadows = new ShadowGenerator(1024, sun);
+const shadows = new ShadowGenerator(2048, sun);
 shadows.useBlurExponentialShadowMap = true;
 
-// --- Greybox level (placeholder until Phase 1/6) ---------------------------------
-const mat = (name: string, hex: string) => {
-  const m = new StandardMaterial(name, scene);
-  m.diffuseColor = Color3.FromHexString(hex);
-  m.specularColor = new Color3(0.08, 0.08, 0.08);
-  return m;
-};
-const grass = mat("grass", "#4fd27e");
-const grassDark = mat("grassDark", "#3fbf6e");
-const dirt = mat("dirt", "#c9773a");
-const blockMat = mat("block", "#ffd23f");
+// --- Level: one data source for visuals and physics ------------------------------
+const level = testLevel;
+buildLevel(scene, level, shadows);
 
-const TILE = 2;
-const HALF = 8;
-for (let x = -HALF; x < HALF; x++) {
-  for (let z = -HALF; z < HALF; z++) {
-    const tile = CreateBox(`t${x}_${z}`, { width: TILE, depth: TILE, height: 1 }, scene);
-    tile.position.set(x * TILE + 1, -0.5, z * TILE + 1);
-    tile.material = (x + z) % 2 === 0 ? grass : grassDark;
-    tile.receiveShadows = true;
-    tile.freezeWorldMatrix();
-  }
-}
-const base = CreateBox("base", { width: HALF * 2 * TILE, depth: HALF * 2 * TILE, height: 4 }, scene);
-base.position.y = -3;
-base.material = dirt;
-
-for (const [x, z, h] of [
-  [6, 6, 1],
-  [8, 6, 2],
-  [-8, 4, 1.5],
-  [4, -9, 1],
-] as const) {
-  const b = CreateBox(`block${x}${z}`, { width: TILE, depth: TILE, height: h }, scene);
-  b.position.set(x, h / 2, z);
-  b.material = blockMat;
-  b.receiveShadows = true;
-  shadows.addShadowCaster(b);
-}
-
-// --- Crystals -------------------------------------------------------------------
-const crystals = ringOfCrystals(10, 6);
-const crystalMat = mat("crystal", "#ff2e88");
+// --- Crystals ---------------------------------------------------------------------
+const crystals: Crystal[] = Array.from({ length: 8 }, (_, i) => {
+  const a = (i / 8) * Math.PI * 2;
+  return { id: i, pos: { x: Math.cos(a) * 3.5, y: 0.8, z: Math.sin(a) * 3.5 - 5 }, taken: false };
+});
+const crystalMat = makeMaterial(scene, "crystal", "#ff2e88");
 crystalMat.emissiveColor = Color3.FromHexString("#5a0a2c");
 const crystalMeshes = new Map<number, Mesh>();
 for (const c of crystals) {
@@ -116,92 +86,96 @@ for (const c of crystals) {
   crystalMeshes.set(c.id, m);
 }
 
-// --- Players --------------------------------------------------------------------
+// --- Heroes -----------------------------------------------------------------------
 const heroColors = ["#2f6bff", "#ff8a1f", "#9b4dff", "#ff3b3b"];
+const capsuleHeight = 2 * (tuning.capsule.halfHeight + tuning.capsule.radius);
 function makeHero(color: string): Mesh {
-  const m = CreateCapsule("hero", { height: 1.6, radius: 0.45 }, scene);
-  m.material = mat(`hero${color}`, color);
+  const m = CreateCapsule("hero", { height: capsuleHeight, radius: tuning.capsule.radius }, scene);
+  m.material = makeMaterial(scene, `hero${color}`, color);
   shadows.addShadowCaster(m);
   return m;
 }
 
-let local: PlayerSim = createPlayer();
-let prev: PlayerSim = local;
 const localMesh = makeHero(heroColors[0] ?? "#2f6bff");
 const remoteMeshes = new Map<string, Mesh>();
 let collected = 0;
 
-// --- Network (optional in Phase 0) ---------------------------------------------
-let net: Net | null = null;
 $("status").textContent = tr.connecting;
 $("hint").textContent = tr.hint;
-connect().then((n) => {
-  net = n;
-  if (!n) $("status").textContent = tr.offline;
-});
-
 bindKeyboard(window);
 canvas.focus();
 
-// --- Fixed-step loop -------------------------------------------------------------
-let acc = 0;
-const t0 = Vector3.Zero();
-scene.onBeforeRenderObservable.add(() => {
-  const dt = Math.min(engine.getDeltaTime() / 1000, 0.25);
-  acc += dt;
-  while (acc >= SIM_DT) {
-    const input = readInput();
-    prev = local;
-    local = stepPlayer(local, input);
-    net?.sendInput(input);
-    for (const id of collectCrystals(local.pos, crystals)) {
-      crystalMeshes.get(id)?.dispose();
-      collected++;
-    }
-    acc -= SIM_DT;
-  }
-  const alpha = acc / SIM_DT;
+async function start() {
+  await initPhysics();
+  const world = new PhysicsWorld(level);
+  const body = world.addCharacter(level.spawn);
+  let mover: MoverState = createMover(level.spawn);
+  let prev: MoverState = mover;
 
-  if (net) {
-    // Phase 0: server positions are shown directly; Phase 2 adds prediction + interpolation.
-    const players = net.players();
-    $("status").textContent = tr.online(players.size);
-    const me = players.get(net.sessionId);
-    if (me) {
-      local = { ...local, pos: { x: me.x, y: me.y, z: me.z } };
-      prev = local;
-    }
-    for (const [id, p] of players) {
-      if (id === net.sessionId) continue;
-      let m = remoteMeshes.get(id);
-      if (!m) {
-        m = makeHero(heroColors[remoteMeshes.size + 1] ?? "#ffffff");
-        remoteMeshes.set(id, m);
+  const net: Net | null = await connect();
+  if (!net) $("status").textContent = tr.offline;
+
+  let acc = 0;
+  const follow = Vector3.Zero();
+  scene.onBeforeRenderObservable.add(() => {
+    const dt = Math.min(engine.getDeltaTime() / 1000, 0.25);
+    acc += dt;
+    while (acc >= SIM_DT) {
+      const input = readInput();
+      prev = mover;
+      mover = stepMover(world, body, mover, input, SIM_DT, level.spawn);
+      net?.sendInput(input);
+      for (const id of collectCrystals(mover.pos, crystals)) {
+        crystalMeshes.get(id)?.dispose();
+        collected++;
       }
-      m.position.set(p.x, p.y + 0.8, p.z);
+      acc -= SIM_DT;
     }
-    for (const [id, m] of remoteMeshes) {
-      if (!players.has(id)) {
-        m.dispose();
-        remoteMeshes.delete(id);
+    const alpha = acc / SIM_DT;
+
+    if (net) {
+      // Phase 1: the server position wins outright; Phase 2 adds prediction + reconciliation.
+      const players = net.players();
+      $("status").textContent = tr.online(players.size);
+      const me = players.get(net.sessionId);
+      if (me) {
+        mover = { ...mover, pos: { x: me.x, y: me.y, z: me.z } };
+        prev = mover;
+      }
+      for (const [id, p] of players) {
+        if (id === net.sessionId) continue;
+        let m = remoteMeshes.get(id);
+        if (!m) {
+          m = makeHero(heroColors[remoteMeshes.size + 1] ?? "#ffffff");
+          remoteMeshes.set(id, m);
+        }
+        m.position.set(p.x, p.y, p.z);
+      }
+      for (const [id, m] of remoteMeshes) {
+        if (!players.has(id)) {
+          m.dispose();
+          remoteMeshes.delete(id);
+        }
       }
     }
-  }
 
-  const x = prev.pos.x + (local.pos.x - prev.pos.x) * alpha;
-  const z = prev.pos.z + (local.pos.z - prev.pos.z) * alpha;
-  localMesh.position.set(x, local.pos.y + 0.8, z);
+    const x = prev.pos.x + (mover.pos.x - prev.pos.x) * alpha;
+    const y = prev.pos.y + (mover.pos.y - prev.pos.y) * alpha;
+    const z = prev.pos.z + (mover.pos.z - prev.pos.z) * alpha;
+    localMesh.position.set(x, y, z);
 
-  // Camera follows with smoothing.
-  t0.set(x, 0, z);
-  Vector3.LerpToRef(camTarget, t0, 1 - 0.0001 ** dt, camTarget);
-  camera.position.copyFrom(camTarget).addInPlace(camOffset);
+    // Camera follows with smoothing.
+    follow.set(x, y - capsuleHeight / 2, z);
+    Vector3.LerpToRef(camTarget, follow, 1 - 0.0001 ** dt, camTarget);
+    camera.position.copyFrom(camTarget).addInPlace(camOffset);
 
-  const spin = performance.now() / 600;
-  for (const m of crystalMeshes.values()) if (!m.isDisposed()) m.rotation.y = spin;
-  $("crystals").textContent = tr.crystals(collected, crystals.length);
-});
+    const spin = performance.now() / 600;
+    for (const m of crystalMeshes.values()) if (!m.isDisposed()) m.rotation.y = spin;
+    $("crystals").textContent = tr.crystals(collected, crystals.length);
+  });
+}
 
+start();
 engine.runRenderLoop(() => scene.render());
 window.addEventListener("resize", () => {
   engine.resize();

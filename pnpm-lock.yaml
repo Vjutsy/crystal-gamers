@@ -59,7 +59,11 @@ importers:
         specifier: 4.23.15
         version: 4.23.15
 
-  packages/shared: {}
+  packages/shared:
+    dependencies:
+      '@dimforge/rapier3d-deterministic-compat':
+        specifier: 0.21.0
+        version: 0.21.0
 
 packages:
 
@@ -214,6 +218,9 @@ packages:
     peerDependencies:
       '@colyseus/core': ^0.18.5
       express: ^4.16.0 || ^5.0.0
+
+  '@dimforge/rapier3d-deterministic-compat@0.21.0':
+    resolution: {integrity: sha512-n7JuU62Obljlgq+OeH2DHhTmRSjRzwuJPl54tS9pFIzVQyvXsO5CH+a5KkIRBtnFWDbg1Zicv9BulG0jfBAopA==}
 
   '@emnapi/core@2.0.0-beta.2':
     resolution: {integrity: sha512-MzCVoWtcg4Pm2B3je5mMvYMvj3MmBKw+fU7vbsJc9/iT8ip6/eYIHo/Dsm/mr+wsHB6SEyJDuxB09Yy6r/8+4A==}
@@ -1589,6 +1596,8 @@ snapshots:
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
+
+  '@dimforge/rapier3d-deterministic-compat@0.21.0': {}
 
   '@emnapi/core@2.0.0-beta.2':
     dependencies:
