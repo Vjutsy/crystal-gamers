@@ -67,6 +67,28 @@ export const tuning = {
     /** Horizontal reach of a spring, m (added to the capsule radius) */
     springRadius: 0.45,
   },
+  hazards: {
+    /** m/s pushed away from the hazard on a hit */
+    knockback: 7,
+    /** m/s upward on a hit */
+    knockbackUp: 8,
+    /** s of invulnerability after a hit (the hero blinks) */
+    invulnTime: 1.5,
+    /** s a downed hero stays down before respawning at the checkpoint (solo) */
+    downedTime: 1.2,
+  },
+  scatter: {
+    /** Lost crystals that are thrown out (the rest are gone for good) */
+    max: 16,
+    /** m/s outward and upward when crystals are thrown */
+    speed: 6,
+    up: 7,
+    /** s before thrown crystals can be picked up again, and before they vanish */
+    pickupDelay: 0.5,
+    life: 3,
+    /** m reach for picking up any crystal (hero centre to crystal) */
+    pickupRadius: 1,
+  },
   world: {
     /** Below this height the hero respawns. */
     killY: -15,

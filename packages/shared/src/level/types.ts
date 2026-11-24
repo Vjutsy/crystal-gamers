@@ -39,11 +39,32 @@ export interface Booster {
   speed: number;
 }
 
-export type LevelObject = Spring | Booster;
+/** Flat spike plate: hurts on touch (lose all crystals, or fall down with none). Not solid. */
+export interface Spikes {
+  kind: "spikes";
+  /** Centre of the plate, on the surface it lies on. */
+  pos: Vec3;
+  /** Footprint, metres, along the plate's own axes. */
+  length: number;
+  width: number;
+  /** Rotation in degrees around Y (0 = length along +Z). */
+  yaw: number;
+}
+
+/** Touch to make this the hero's respawn point. */
+export interface Checkpoint {
+  kind: "checkpoint";
+  /** Base of the post, on the ground. */
+  pos: Vec3;
+}
+
+export type LevelObject = Spring | Booster | Spikes | Checkpoint;
 
 export interface Level {
   name: string;
   spawn: Vec3;
   solids: Solid[];
   objects?: LevelObject[];
+  /** Crystal pickups (centre positions). */
+  crystals?: Vec3[];
 }

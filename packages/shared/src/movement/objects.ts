@@ -58,7 +58,7 @@ export function touchObjects(
         }
         out.launched = true;
       }
-    } else if (grounded && touchesBooster(feet, o)) {
+    } else if (o.kind === "booster" && grounded && touchesBooster(feet, o)) {
       const yaw = (o.yaw * Math.PI) / 180;
       const fx = Math.sin(yaw);
       const fz = Math.cos(yaw);

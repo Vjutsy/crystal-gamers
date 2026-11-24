@@ -4,8 +4,17 @@ import { Color3 } from "@babylonjs/core/Maths/math.color";
 import { Quaternion } from "@babylonjs/core/Maths/math.vector";
 import { CreateBox } from "@babylonjs/core/Meshes/Builders/boxBuilder";
 import { CreateCylinder } from "@babylonjs/core/Meshes/Builders/cylinderBuilder";
+import { CreateSphere } from "@babylonjs/core/Meshes/Builders/sphereBuilder";
 import type { Scene } from "@babylonjs/core/scene";
-import { type Booster, type Level, quatFromEulerDeg, type SolidStyle, type Spring, tuning } from "@cg/shared";
+import {
+  type Booster,
+  type Level,
+  quatFromEulerDeg,
+  type SolidStyle,
+  type Spikes,
+  type Spring,
+  tuning,
+} from "@cg/shared";
 
 const STYLE_COLORS: Record<SolidStyle, string> = {
   grass: "#4fd27e",
@@ -44,7 +53,8 @@ export function buildLevel(scene: Scene, level: Level, shadows: ShadowGenerator)
   });
   for (const [i, o] of (level.objects ?? []).entries()) {
     if (o.kind === "spring") buildSpring(scene, o, i, shadows);
-    else buildBooster(scene, o, i);
+    else if (o.kind === "booster") buildBooster(scene, o, i);
+    else if (o.kind === "spikes") buildSpikes(scene, o, i, shadows);
   }
 }
 
@@ -81,6 +91,60 @@ function buildBooster(scene: Scene, b: Booster, i: number) {
       bar.rotation.y = side * (Math.PI / 4);
     }
   }
+}
+
+function buildSpikes(scene: Scene, s: Spikes, i: number, shadows: ShadowGenerator) {
+  const plate = CreateBox(`spikes${i}`, { width: s.width, height: 0.08, depth: s.length }, scene);
+  plate.material = cachedMat(scene, "spike-plate", "#5b5f6b");
+  plate.position.set(s.pos.x, s.pos.y + 0.04, s.pos.z);
+  plate.rotation.y = (s.yaw * Math.PI) / 180;
+  plate.receiveShadows = true;
+  const step = 0.5;
+  for (let a = -s.width / 2 + step / 2; a < s.width / 2; a += step) {
+    for (let b = -s.length / 2 + step / 2; b < s.length / 2; b += step) {
+      const cone = CreateCylinder(
+        `spike${i}`,
+        { diameterTop: 0, diameterBottom: 0.28, height: 0.4, tessellation: 4 },
+        scene,
+      );
+      cone.material = cachedMat(scene, "spike", "#d9dde6");
+      cone.parent = plate;
+      cone.position.set(a, 0.24, b);
+      shadows.addShadowCaster(cone);
+    }
+  }
+}
+
+export interface CheckpointView {
+  /** Respawn position this checkpoint sets (same rule as the shared game code). */
+  respawn: { x: number; z: number };
+  setActive(active: boolean): void;
+}
+
+/** Checkpoint posts: blue until touched, then the ball lights up yellow. */
+export function buildCheckpoints(scene: Scene, level: Level, shadows: ShadowGenerator): CheckpointView[] {
+  const idle = cachedMat(scene, "cp-idle", "#4a7dff");
+  const lit = cachedMat(scene, "cp-lit", "#ffd23f");
+  lit.emissiveColor = Color3.FromHexString("#806000");
+  const views: CheckpointView[] = [];
+  for (const [i, o] of (level.objects ?? []).entries()) {
+    if (o.kind !== "checkpoint") continue;
+    const pole = CreateCylinder(`cpPole${i}`, { diameter: 0.12, height: 1.6, tessellation: 8 }, scene);
+    pole.material = cachedMat(scene, "cp-pole", "#e8e8f0");
+    pole.position.set(o.pos.x, o.pos.y + 0.8, o.pos.z);
+    shadows.addShadowCaster(pole);
+    const ball = CreateSphere(`cpBall${i}`, { diameter: 0.45, segments: 10 }, scene);
+    ball.material = idle;
+    ball.parent = pole;
+    ball.position.y = 0.9;
+    views.push({
+      respawn: { x: o.pos.x, z: o.pos.z },
+      setActive: (active) => {
+        ball.material = active ? lit : idle;
+      },
+    });
+  }
+  return views;
 }
 
 const matCache = new Map<string, StandardMaterial>();

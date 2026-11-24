@@ -15,23 +15,20 @@ import { CreatePolyhedron } from "@babylonjs/core/Meshes/Builders/polyhedronBuil
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { Scene } from "@babylonjs/core/scene";
 import {
-  type Crystal,
-  collectCrystals,
-  createMover,
+  createGame,
+  type HeroState,
   initPhysics,
   type MoverState,
   PhysicsWorld,
-  rotateY,
-  SCREEN_YAW_DEG,
   SIM_DT,
-  stepMover,
+  stepGame,
   testLevel,
   tuning,
 } from "@cg/shared";
 import { maybeShowDebugPanel } from "./debug-panel.ts";
 import { tr } from "./i18n.ts";
 import { bindKeyboard, readInput } from "./input.ts";
-import { buildLevel, makeMaterial } from "./level-view.ts";
+import { buildCheckpoints, buildLevel, makeMaterial } from "./level-view.ts";
 import { connect, type Net } from "./net.ts";
 
 const canvas = document.getElementById("game") as HTMLCanvasElement;
@@ -76,22 +73,22 @@ const level = testLevel;
 buildLevel(scene, level, shadows);
 
 // --- Crystals ---------------------------------------------------------------------
-const crystals: Crystal[] = Array.from({ length: 8 }, (_, i) => {
-  const a = (i / 8) * Math.PI * 2;
-  const pos = rotateY({ x: Math.cos(a) * 3.5, y: 0.8, z: Math.sin(a) * 3.5 - 5 }, SCREEN_YAW_DEG);
-  return { id: i, pos, taken: false };
-});
 const crystalMat = makeMaterial(scene, "crystal", "#ff2e88");
 crystalMat.emissiveColor = Color3.FromHexString("#5a0a2c");
+const crystalTemplate = CreatePolyhedron("crystal", { type: 1, size: 0.35 }, scene);
+crystalTemplate.scaling.y = 1.6;
+crystalTemplate.material = crystalMat;
+crystalTemplate.isVisible = false;
 const crystalMeshes = new Map<number, Mesh>();
-for (const c of crystals) {
-  const m = CreatePolyhedron(`crystal${c.id}`, { type: 1, size: 0.35 }, scene);
-  m.scaling.y = 1.6;
-  m.position.set(c.pos.x, c.pos.y, c.pos.z);
-  m.material = crystalMat;
+(level.crystals ?? []).forEach((pos, id) => {
+  const m = crystalTemplate.clone(`crystal${id}`);
+  m.isVisible = true;
+  m.position.set(pos.x, pos.y, pos.z);
   shadows.addShadowCaster(m);
-  crystalMeshes.set(c.id, m);
-}
+  crystalMeshes.set(id, m);
+});
+/** Meshes for crystals thrown out by hits, keyed by scattered id. */
+const scatteredMeshes = new Map<number, Mesh>();
 
 // --- Heroes -----------------------------------------------------------------------
 const heroColors = ["#2f6bff", "#ff8a1f", "#9b4dff", "#ff3b3b"];
@@ -130,7 +127,7 @@ blobMat.disableLighting = true;
 blob.material = blobMat;
 const FEET = tuning.capsule.halfHeight + tuning.capsule.radius;
 const remoteMeshes = new Map<string, Mesh>();
-let collected = 0;
+const ME = "me";
 
 $("status").textContent = tr.connecting;
 $("hint").textContent = tr.hint;
@@ -140,9 +137,10 @@ canvas.focus();
 async function start() {
   await initPhysics();
   const world = new PhysicsWorld(level);
-  const body = world.addCharacter(level.spawn);
-  let mover: MoverState = createMover(level.spawn);
-  let prev: MoverState = mover;
+  const game = createGame(world, level, [ME]);
+  const hero = () => game.heroes[ME] as HeroState;
+  let prev: MoverState = hero().mover;
+  const checkpointViews = buildCheckpoints(scene, level, shadows);
 
   const net: Net | null = await connect();
   if (!net) $("status").textContent = tr.offline;
@@ -154,16 +152,13 @@ async function start() {
     acc += dt;
     while (acc >= SIM_DT) {
       const input = readInput();
-      prev = mover;
-      mover = stepMover(world, body, mover, input, SIM_DT, level.spawn);
+      prev = hero().mover;
+      stepGame(world, game, { [ME]: input }, SIM_DT);
       net?.sendInput(input);
-      for (const id of collectCrystals(mover.pos, crystals)) {
-        crystalMeshes.get(id)?.dispose();
-        collected++;
-      }
       acc -= SIM_DT;
     }
     const alpha = acc / SIM_DT;
+    const h = hero();
 
     if (net) {
       // Phase 1: the server position wins outright; Phase 2 adds prediction + reconciliation.
@@ -171,8 +166,8 @@ async function start() {
       $("status").textContent = tr.online(players.size);
       const me = players.get(net.sessionId);
       if (me) {
-        mover = { ...mover, pos: { x: me.x, y: me.y, z: me.z } };
-        prev = mover;
+        h.mover = { ...h.mover, pos: { x: me.x, y: me.y, z: me.z } };
+        prev = h.mover;
       }
       for (const [id, p] of players) {
         if (id === net.sessionId) continue;
@@ -191,18 +186,25 @@ async function start() {
       }
     }
 
+    const mover = h.mover;
     const x = prev.pos.x + (mover.pos.x - prev.pos.x) * alpha;
     const y = prev.pos.y + (mover.pos.y - prev.pos.y) * alpha;
     const z = prev.pos.z + (mover.pos.z - prev.pos.z) * alpha;
     localMesh.position.set(x, y, z);
 
-    // Spin dash look: squash while charging (pulsing faster per charge level), ball while rolling.
+    // Look: squash while charging, ball while rolling, lying grey when downed, blinking when hurt.
     const glow = localMesh.material as StandardMaterial;
-    if (mover.spinCharge >= 0) {
-      const level = Math.min(3, 1 + Math.floor(mover.spinCharge / tuning.spinDash.levelTime));
-      const pulse = 0.5 + 0.5 * Math.sin(performance.now() / (120 - level * 25));
+    localMesh.rotation.set(0, 0, 0);
+    if (h.downed > 0) {
+      localMesh.scaling.set(1, 1, 1);
+      localMesh.rotation.z = Math.PI / 2;
+      localMesh.position.y = y - FEET + tuning.capsule.radius;
+      glow.emissiveColor.set(0, 0, 0);
+    } else if (mover.spinCharge >= 0) {
+      const lvl = Math.min(3, 1 + Math.floor(mover.spinCharge / tuning.spinDash.levelTime));
+      const pulse = 0.5 + 0.5 * Math.sin(performance.now() / (120 - lvl * 25));
       localMesh.scaling.set(1.15, 0.7, 1.15);
-      glow.emissiveColor.set(0.15 * level * pulse, 0.25 * level * pulse, 0.6 * level * pulse);
+      glow.emissiveColor.set(0.15 * lvl * pulse, 0.25 * lvl * pulse, 0.6 * lvl * pulse);
     } else if (mover.rolling) {
       localMesh.scaling.set(1.05, 0.55, 1.05);
       glow.emissiveColor.set(0.1, 0.35, 0.9);
@@ -210,8 +212,8 @@ async function start() {
       localMesh.scaling.set(1, 1, 1);
       glow.emissiveColor.set(0, 0, 0);
     }
-    // Keep the feet on the ground when squashed.
-    localMesh.position.y -= ((1 - localMesh.scaling.y) * capsuleHeight) / 2;
+    if (h.downed <= 0) localMesh.position.y -= ((1 - localMesh.scaling.y) * capsuleHeight) / 2;
+    localMesh.visibility = h.invuln > 0 && Math.floor(performance.now() / 90) % 2 === 0 ? 0.25 : 1;
 
     const groundY = world.surfaceBelow({ x, y: y - FEET + 0.05, z }, 12);
     blob.isVisible = groundY !== null;
@@ -228,10 +230,41 @@ async function start() {
     Vector3.LerpToRef(camTarget, follow, 1 - 0.0001 ** dt, camTarget);
     camera.position.copyFrom(camTarget).addInPlace(camOffset);
 
+    // Crystals: hide taken ones, sync thrown ones (they blink before vanishing).
     const spin = performance.now() / 600;
-    for (const m of crystalMeshes.values()) if (!m.isDisposed()) m.rotation.y = spin;
-    $("crystals").textContent = tr.crystals(collected, crystals.length);
+    for (const c of game.crystals) {
+      const m = crystalMeshes.get(c.id);
+      if (!m) continue;
+      m.isVisible = !c.taken;
+      m.rotation.y = spin;
+    }
+    const alive = new Set<number>();
+    for (const c of game.scattered) {
+      alive.add(c.id);
+      let m = scatteredMeshes.get(c.id);
+      if (!m) {
+        m = crystalTemplate.clone(`scattered${c.id}`);
+        scatteredMeshes.set(c.id, m);
+      }
+      m.position.set(c.pos.x, c.pos.y, c.pos.z);
+      m.rotation.y = spin * 3;
+      const fading = c.age > tuning.scatter.life - 1;
+      m.isVisible = !fading || Math.floor(performance.now() / 80) % 2 === 0;
+    }
+    for (const [id, m] of scatteredMeshes) {
+      if (!alive.has(id)) {
+        m.dispose();
+        scatteredMeshes.delete(id);
+      }
+    }
+
+    for (const v of checkpointViews) v.setActive(isSamePlace(v.respawn, h.checkpoint));
+    $("crystals").textContent = tr.crystals(h.crystals, game.crystals.length);
   });
+}
+
+function isSamePlace(a: { x: number; z: number }, b: { x: number; z: number }) {
+  return Math.abs(a.x - b.x) < 0.01 && Math.abs(a.z - b.z) < 0.01;
 }
 
 maybeShowDebugPanel();

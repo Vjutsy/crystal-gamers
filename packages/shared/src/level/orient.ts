@@ -28,6 +28,7 @@ function orientObject(o: LevelObject, yaw: number): LevelObject {
     const push = o.push ? rotateY({ x: o.push.x, y: 0, z: o.push.z }, yaw) : undefined;
     return { ...o, pos: rotateY(o.pos, yaw), ...(push ? { push: { x: push.x, z: push.z } } : {}) };
   }
+  if (o.kind === "checkpoint") return { ...o, pos: rotateY(o.pos, yaw) };
   return { ...o, pos: rotateY(o.pos, yaw), yaw: o.yaw + yaw };
 }
 
@@ -38,5 +39,6 @@ export function orientLevel(level: Level, yawDeg = SCREEN_YAW_DEG): Level {
     spawn: rotateY(level.spawn, yawDeg),
     solids: level.solids.map((s) => orientSolid(s, yawDeg)),
     objects: level.objects?.map((o) => orientObject(o, yawDeg)),
+    crystals: level.crystals?.map((c) => rotateY(c, yawDeg)),
   };
 }
