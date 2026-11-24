@@ -1,4 +1,4 @@
-import type { Vec3 } from "./sim.ts";
+import type { Vec3 } from "./math.ts";
 
 export interface Crystal {
   id: number;

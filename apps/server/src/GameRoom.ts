@@ -1,11 +1,14 @@
 import {
-  createPlayer,
+  createMover,
   type InputFrame,
+  initPhysics,
   MAX_PLAYERS,
+  type MoverState,
   NO_INPUT,
-  type PlayerSim,
+  PhysicsWorld,
   SIM_DT,
-  stepPlayer,
+  stepMover,
+  testLevel,
 } from "@cg/shared";
 import { type Client, Room } from "@colyseus/core";
 import { type SchemaType, schema, t } from "@colyseus/schema";
@@ -30,19 +33,24 @@ export const GameState = schema(
 export type GameState = SchemaType<typeof GameState>;
 
 interface Seat {
-  sim: PlayerSim;
+  body: number;
+  mover: MoverState;
   input: InputFrame;
 }
 
 /**
- * Phase 0 room: proves the pipeline client → input → shared sim on server → state → client.
+ * Authoritative room: runs the same shared movement code as the client.
  * Real netcode (prediction, reconciliation, room codes) arrives in Phase 2.
  */
 export class GameRoom extends Room<{ state: GameState }> {
   override maxClients = MAX_PLAYERS;
   private seats = new Map<string, Seat>();
+  private world!: PhysicsWorld;
+  private readonly level = testLevel;
 
-  override onCreate() {
+  override async onCreate() {
+    await initPhysics();
+    this.world = new PhysicsWorld(this.level);
     this.setState(new GameState());
     this.onMessage("input", (client, msg: unknown) => {
       const seat = this.seats.get(client.sessionId);
@@ -53,29 +61,36 @@ export class GameRoom extends Room<{ state: GameState }> {
 
   override onJoin(client: Client, options?: { name?: unknown }) {
     const index = this.seats.size;
-    const sim = createPlayer({ x: index * 2 - 3, y: 0, z: 0 });
-    this.seats.set(client.sessionId, { sim, input: NO_INPUT });
+    const spawn = { ...this.level.spawn, x: this.level.spawn.x + index * 1.5 };
+    const mover = createMover(spawn);
+    this.seats.set(client.sessionId, { body: this.world.addCharacter(spawn), mover, input: NO_INPUT });
     const p = new PlayerState();
     p.name = typeof options?.name === "string" ? options.name.slice(0, 16) : `Гравець ${index + 1}`;
-    p.x = sim.pos.x;
-    p.y = sim.pos.y;
-    p.z = sim.pos.z;
+    p.x = mover.pos.x;
+    p.y = mover.pos.y;
+    p.z = mover.pos.z;
     this.state.players.set(client.sessionId, p);
   }
 
   override onLeave(client: Client) {
+    const seat = this.seats.get(client.sessionId);
+    if (seat) this.world.removeCharacter(seat.body);
     this.seats.delete(client.sessionId);
     this.state.players.delete(client.sessionId);
   }
 
+  override onDispose() {
+    this.world?.dispose();
+  }
+
   private tick() {
     for (const [id, seat] of this.seats) {
-      seat.sim = stepPlayer(seat.sim, seat.input);
+      seat.mover = stepMover(this.world, seat.body, seat.mover, seat.input, SIM_DT, this.level.spawn);
       const p = this.state.players.get(id);
       if (!p) continue;
-      p.x = seat.sim.pos.x;
-      p.y = seat.sim.pos.y;
-      p.z = seat.sim.pos.z;
+      p.x = seat.mover.pos.x;
+      p.y = seat.mover.pos.y;
+      p.z = seat.mover.pos.z;
     }
   }
 }
