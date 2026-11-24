@@ -78,6 +78,24 @@ const objects: LevelObject[] = [
   { kind: "booster", pos: { x: 6, y: 0, z: 0.5 }, length: 2, width: 2.4, yaw: 0, speed: 20 },
   // Booster lane towards the jump course (-X).
   { kind: "booster", pos: { x: -10, y: 0, z: -4 }, length: 2, width: 2, yaw: -90, speed: 16 },
+
+  // Spikes right of the crystal ring, and in the first gap of the jump course (miss the jump = hit).
+  // Never put hazards right behind tall solids: the camera cannot show them there.
+  { kind: "spikes", pos: { x: 6, y: 0, z: -5 }, length: 3, width: 2, yaw: 0 },
+  { kind: "spikes", pos: { x: -16.75, y: 0, z: -4 }, length: 1.5, width: 2, yaw: 90 },
+
+  // Checkpoints: start of the jump course and on top of the platform.
+  { kind: "checkpoint", pos: { x: -12.5, y: 0, z: -4 } },
+  { kind: "checkpoint", pos: { x: 4.5, y: 1.55, z: 10.5 } },
+];
+
+/** A ring of crystals below the start, plus a line up the 15° ramp. */
+const crystals = [
+  ...Array.from({ length: 8 }, (_, i) => {
+    const a = (i / 8) * Math.PI * 2;
+    return { x: Math.cos(a) * 3.5, y: 0.8, z: Math.sin(a) * 3.5 - 5 };
+  }),
+  ...[4, 5.5, 7].map((z) => ({ x: 6, y: 0.8 + Math.tan((15 * Math.PI) / 180) * (z - 3.1), z })),
 ];
 
 /** Authored in screen-aligned coordinates (+Z = up the screen), see orientLevel. */
@@ -86,4 +104,5 @@ export const testLevel: Level = orientLevel({
   spawn: { x: 0, y: 1, z: 0 },
   solids,
   objects,
+  crystals,
 });
