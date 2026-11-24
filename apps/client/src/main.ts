@@ -21,6 +21,8 @@ import {
   initPhysics,
   type MoverState,
   PhysicsWorld,
+  rotateY,
+  SCREEN_YAW_DEG,
   SIM_DT,
   stepMover,
   testLevel,
@@ -76,7 +78,8 @@ buildLevel(scene, level, shadows);
 // --- Crystals ---------------------------------------------------------------------
 const crystals: Crystal[] = Array.from({ length: 8 }, (_, i) => {
   const a = (i / 8) * Math.PI * 2;
-  return { id: i, pos: { x: Math.cos(a) * 3.5, y: 0.8, z: Math.sin(a) * 3.5 - 5 }, taken: false };
+  const pos = rotateY({ x: Math.cos(a) * 3.5, y: 0.8, z: Math.sin(a) * 3.5 - 5 }, SCREEN_YAW_DEG);
+  return { id: i, pos, taken: false };
 });
 const crystalMat = makeMaterial(scene, "crystal", "#ff2e88");
 crystalMat.emissiveColor = Color3.FromHexString("#5a0a2c");

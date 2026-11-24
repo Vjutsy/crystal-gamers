@@ -1,8 +1,9 @@
+import { orientLevel } from "./orient.ts";
 import type { Level, LevelObject, Solid } from "./types.ts";
 
 /**
  * Greybox playground for Phase 1 (SPEC-0001).
- * Layout (top view, +X right, +Z up):
+ * Layout in SCREEN coordinates (+X = right on screen, +Z = up on screen):
  *   - big flat floor around the origin
  *   - three ramps of 15°, 30° and 50° along +X
  *   - a staircase of small steps and one tall step along -X
@@ -79,9 +80,10 @@ const objects: LevelObject[] = [
   { kind: "booster", pos: { x: -10, y: 0, z: -4 }, length: 2, width: 2, yaw: -90, speed: 16 },
 ];
 
-export const testLevel: Level = {
+/** Authored in screen-aligned coordinates (+Z = up the screen), see orientLevel. */
+export const testLevel: Level = orientLevel({
   name: "phase1-playground",
   spawn: { x: 0, y: 1, z: 0 },
   solids,
   objects,
-};
+});
