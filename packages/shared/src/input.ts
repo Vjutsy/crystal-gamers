@@ -6,6 +6,8 @@ export interface InputFrame {
   jump: boolean;
   /** Spin dash: hold to charge, release to dash. */
   spin: boolean;
+  /** Interact (E): revive a downed teammate nearby. */
+  interact: boolean;
 }
 
-export const NO_INPUT: InputFrame = { moveX: 0, moveZ: 0, jump: false, spin: false };
+export const NO_INPUT: InputFrame = { moveX: 0, moveZ: 0, jump: false, spin: false, interact: false };

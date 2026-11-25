@@ -105,7 +105,7 @@ describe("spikes", () => {
     const downTick = log.findIndex((l) => l.downed);
     expect(downTick).toBeGreaterThan(0);
     // While down the hero does not move even with input.
-    expect(game.heroes[ME]?.checkpoint.z).toBeCloseTo(2, 5);
+    expect(game.checkpoint.z).toBeCloseTo(2, 5);
     const back = log.findIndex((l, i) => i > downTick && !l.downed);
     expect(back).toBeGreaterThan(downTick);
     expect(log[back]?.z).toBeCloseTo(2, 1);

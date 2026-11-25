@@ -9,6 +9,8 @@ export * from "./math.ts";
 export * from "./movement/mover.ts";
 export * from "./movement/objects.ts";
 export * from "./movement/replay.ts";
+export * from "./net/prediction.ts";
+export * from "./net/protocol.ts";
 export * from "./physics/world.ts";
 export * from "./rng.ts";
 export * from "./room-code.ts";

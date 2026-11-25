@@ -258,7 +258,7 @@ async function start() {
       }
     }
 
-    for (const v of checkpointViews) v.setActive(isSamePlace(v.respawn, h.checkpoint));
+    for (const v of checkpointViews) v.setActive(isSamePlace(v.respawn, game.checkpoint));
     $("crystals").textContent = tr.crystals(h.crystals, game.crystals.length);
   });
 }

@@ -23,7 +23,13 @@ function run(level: Level, inputAt: (tick: number) => InputFrame, ticks: number)
 }
 
 const flat: Level = { name: "flat", spawn: { x: 0, y: STAND_Y + 0.05, z: 0 }, solids: [FLOOR] };
-const jump = (on: boolean, moveZ = 0): InputFrame => ({ moveX: 0, moveZ, jump: on, spin: false });
+const jump = (on: boolean, moveZ = 0): InputFrame => ({
+  moveX: 0,
+  moveZ,
+  jump: on,
+  spin: false,
+  interact: false,
+});
 const peak = (trace: MoverState[]) => Math.max(...trace.map((t) => t.pos.y)) - STAND_Y;
 
 /** Settle on the ground for 20 ticks, then apply `then` from tick 20 on. */
@@ -107,7 +113,7 @@ describe("coyote time and jump buffer", () => {
       { pos: { x: 0, y: -0.5, z: 0 }, size: { x: 200, y: 1, z: 200 }, style: "grass" },
     ],
   };
-  const forward = { moveX: 0, moveZ: 1, jump: false, spin: false };
+  const forward = { moveX: 0, moveZ: 1, jump: false, spin: false, interact: false };
 
   function jumpAfterLeavingEdge(ticksLate: number): boolean {
     const world = new PhysicsWorld(platform);

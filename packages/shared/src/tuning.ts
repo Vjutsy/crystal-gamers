@@ -77,6 +77,14 @@ export const tuning = {
     /** s a downed hero stays down before respawning at the checkpoint (solo) */
     downedTime: 1.2,
   },
+  coop: {
+    /** m reach for reviving a downed teammate with E (centre to centre) */
+    reviveRadius: 1.8,
+    /** s of invulnerability after being revived */
+    reviveInvuln: 1.5,
+    /** m: when a checkpoint is activated, teammates farther than this from it are moved there */
+    pullDistance: 20,
+  },
   scatter: {
     /** Lost crystals that are thrown out (the rest are gone for good) */
     max: 16,
