@@ -52,20 +52,33 @@ describe("reviving", () => {
     expect(game.heroes.a?.downed).toBeGreaterThan(0);
   });
 
-  it("a teammate next to it pressing E gets it up on the spot", () => {
+  it("a teammate next to it pressing E gets it up beside the teammate, off the hazard", () => {
     const { world, game } = setup([spikesAt(0, 4)]);
     downHero(world, game, "a", 0);
-    const downedAt = { ...(game.heroes.a?.mover.pos ?? { x: 0, y: 0, z: 0 }) };
     // b starts at x = 1.5; walk it straight up (+Z) to stand beside a, just off the spikes.
     play(world, game, (t) => ({ b: t < 22 ? move(0, 1) : NO_INPUT }), 40);
     expect(game.heroes.b?.downed).toBe(0);
     play(world, game, () => ({ b: press({ interact: true }) }), 1);
     const a = game.heroes.a;
+    const b = game.heroes.b;
     expect(a?.downed).toBe(0);
     expect(a?.invuln).toBeGreaterThan(0);
-    expect(Math.hypot((a?.mover.pos.x ?? 0) - downedAt.x, (a?.mover.pos.z ?? 0) - downedAt.z)).toBeLessThan(
-      0.5,
-    );
+    // Gets up where the reviver stands, not back on the spikes (playtest bug, 2026-11-25).
+    expect(
+      Math.hypot(
+        (a?.mover.pos.x ?? 0) - (b?.mover.pos.x ?? 0),
+        (a?.mover.pos.z ?? 0) - (b?.mover.pos.z ?? 0),
+      ),
+    ).toBeLessThan(0.5);
+  });
+
+  it("a revived hero standing still does not go down again once invulnerability ends", () => {
+    const { world, game } = setup([spikesAt(0, 4)]);
+    downHero(world, game, "a", 0);
+    play(world, game, (t) => ({ b: t < 22 ? move(0, 1) : NO_INPUT }), 40);
+    play(world, game, () => ({ b: press({ interact: true }) }), 1);
+    play(world, game, () => ({}), Math.ceil((tuning.coop.reviveInvuln + 1) / SIM_DT));
+    expect(game.heroes.a?.downed).toBe(0);
   });
 
   it("pressing E far away does nothing", () => {
