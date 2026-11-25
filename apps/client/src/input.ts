@@ -14,6 +14,7 @@ const GAME_KEYS = new Set([
   "KeyD",
   "ShiftLeft",
   "ShiftRight",
+  "KeyE",
 ]);
 
 export function bindKeyboard(target: Window) {
@@ -43,5 +44,6 @@ export function readInput(): InputFrame {
     moveZ: (sy - sx) * k,
     jump: held.has("Space"),
     spin: held.has("ShiftLeft") || held.has("ShiftRight"),
+    interact: held.has("KeyE"),
   };
 }

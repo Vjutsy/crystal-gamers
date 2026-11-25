@@ -4,11 +4,11 @@ import {
   type InputFrame,
   initPhysics,
   MAX_PLAYERS,
-  NO_INPUT,
   PhysicsWorld,
   removeHero,
   type GameState as SharedGame,
   SIM_DT,
+  sanitizeInput,
   stepGame,
   testLevel,
 } from "@cg/shared";
@@ -87,13 +87,4 @@ export class GameRoom extends Room<{ state: GameState }> {
       p.z = hero.mover.pos.z;
     }
   }
-}
-
-/** Never trust the client: coerce whatever arrives into a valid InputFrame. */
-export function sanitizeInput(msg: unknown): InputFrame {
-  if (typeof msg !== "object" || msg === null) return NO_INPUT;
-  const m = msg as Record<string, unknown>;
-  const num = (v: unknown) =>
-    typeof v === "number" && Number.isFinite(v) ? Math.max(-1, Math.min(1, v)) : 0;
-  return { moveX: num(m.moveX), moveZ: num(m.moveZ), jump: m.jump === true, spin: m.spin === true };
 }

@@ -14,10 +14,14 @@ export interface HeroState {
   crystals: number;
   /** Seconds of invulnerability left after a hit. */
   invuln: number;
-  /** Seconds left lying down after a hit with no crystals (0 = standing). */
+  /**
+   * > 0 while lying down after a hit with no crystals (0 = standing).
+   * Counts down; in co-op it stops at a tiny value until a teammate revives the hero
+   * or the whole team is down.
+   */
   downed: number;
-  /** Where the hero respawns (last checkpoint touched, or the level start). */
-  checkpoint: Vec3;
+  /** Interact button state on the previous tick, to detect new presses. */
+  interactHeld: boolean;
 }
 
 /** A crystal thrown out by a hit: flies, bounces, can be caught again, then vanishes. */
@@ -34,6 +38,8 @@ export interface GameState {
   scattered: Scattered[];
   nextScatterId: number;
   spawn: Vec3;
+  /** Shared respawn point of the whole team (last checkpoint anyone touched). */
+  checkpoint: Vec3;
 }
 
 export type GameEvent =
@@ -41,6 +47,8 @@ export type GameEvent =
   | { type: "hit"; hero: string; lost: number }
   | { type: "downed"; hero: string }
   | { type: "respawn"; hero: string }
+  | { type: "revive"; hero: string; by: string }
+  | { type: "pulled"; hero: string }
   | { type: "checkpoint"; hero: string };
 
 const STAND = tuning.capsule.halfHeight + tuning.capsule.radius;
@@ -52,6 +60,7 @@ export function createGame(world: PhysicsWorld, level: Level, heroIds: string[])
     scattered: [],
     nextScatterId: 1,
     spawn: { ...level.spawn },
+    checkpoint: { ...level.spawn },
   };
   heroIds.forEach((id, i) => {
     addHero(world, game, id, i);
@@ -68,7 +77,7 @@ export function addHero(world: PhysicsWorld, game: GameState, id: string, slot =
     crystals: 0,
     invuln: 0,
     downed: 0,
-    checkpoint: { ...game.spawn },
+    interactHeld: false,
   };
   game.heroes[id] = hero;
   return hero;
@@ -125,6 +134,27 @@ function scatter(game: GameState, from: Vec3, count: number) {
   }
 }
 
+/** Timer floor that marks "down and waiting" (strictly positive, so `downed > 0` still means down). */
+const DOWN_FLOOR = 1e-6;
+
+/** Spreads heroes 1.2 m apart along X around a point, so they don't stand inside each other. */
+function slotNear(p: Vec3, slot: number): Vec3 {
+  return { x: p.x + slot * 1.2, y: p.y, z: p.z };
+}
+
+/** After a checkpoint is activated: teammates far behind (and standing) are moved to it. */
+function pullStragglers(game: GameState, activator: string, events: GameEvent[]) {
+  let slot = 1;
+  for (const id of Object.keys(game.heroes).sort()) {
+    const h = game.heroes[id];
+    if (!h || id === activator || h.downed > 0) continue;
+    if (!near(h.mover.pos, game.checkpoint, tuning.coop.pullDistance)) {
+      h.mover = createMover(slotNear(game.checkpoint, slot++));
+      events.push({ type: "pulled", hero: id });
+    }
+  }
+}
+
 /**
  * Advances the whole game by one tick: every hero (in id order, for determinism),
  * then the thrown crystals. Mutates `game` and returns what happened.
@@ -143,21 +173,16 @@ export function stepGame(
     if (!h) continue;
 
     if (h.downed > 0) {
-      h.downed -= dt;
-      if (h.downed <= 0) {
-        // Solo rule: get up at the checkpoint. (Phase 2: a teammate revives on the spot.)
-        h.downed = 0;
-        h.mover = createMover(h.checkpoint);
-        h.invuln = t.hazards.invulnTime;
-        events.push({ type: "respawn", hero: id });
-      }
+      // Lies still; the timer only matters when the whole team is down (see below).
+      h.downed = Math.max(DOWN_FLOOR, h.downed - dt);
+      h.interactHeld = inputs[id]?.interact ?? false;
       continue;
     }
 
     h.invuln = Math.max(0, h.invuln - dt);
     const input = inputs[id];
     const before = h.mover;
-    h.mover = stepMover(world, h.body, h.mover, input ?? NO_MOVE, dt, h.checkpoint);
+    h.mover = stepMover(world, h.body, h.mover, input ?? NO_MOVE, dt, game.checkpoint);
     if (before.pos.y < t.world.killY + 5 && h.mover.pos.y > before.pos.y + 5) {
       events.push({ type: "respawn", hero: id });
     }
@@ -166,9 +191,28 @@ export function stepGame(
     for (const o of world.objects) {
       if (o.kind === "checkpoint" && atCheckpoint(f, o)) {
         const cp = { x: o.pos.x, y: o.pos.y + STAND + 0.05, z: o.pos.z };
-        if (cp.x !== h.checkpoint.x || cp.y !== h.checkpoint.y || cp.z !== h.checkpoint.z) {
-          h.checkpoint = cp;
+        const c = game.checkpoint;
+        if (cp.x !== c.x || cp.y !== c.y || cp.z !== c.z) {
+          game.checkpoint = cp;
           events.push({ type: "checkpoint", hero: id });
+          pullStragglers(game, id, events);
+        }
+      }
+    }
+
+    // Revive: a new press of E next to a downed teammate gets it up on the spot.
+    const interactPressed = (input?.interact ?? false) && !h.interactHeld;
+    h.interactHeld = input?.interact ?? false;
+    if (interactPressed) {
+      for (const otherId of Object.keys(game.heroes).sort()) {
+        const o = game.heroes[otherId];
+        if (!o || otherId === id || o.downed === 0) continue;
+        if (near(o.mover.pos, h.mover.pos, t.coop.reviveRadius)) {
+          o.downed = 0;
+          o.invuln = t.coop.reviveInvuln;
+          o.mover = { ...createMover(o.mover.pos), facing: o.mover.facing };
+          events.push({ type: "revive", hero: otherId, by: id });
+          break;
         }
       }
     }
@@ -218,6 +262,18 @@ export function stepGame(
     }
   }
 
+  // Whole team down (or a solo hero down): once every timer has run out, all get up at the checkpoint.
+  const ids = Object.keys(game.heroes).sort();
+  const team = ids.map((id) => game.heroes[id]).filter((h): h is HeroState => h !== undefined);
+  if (team.length > 0 && team.every((h) => h.downed > 0) && team.every((h) => h.downed <= DOWN_FLOOR)) {
+    team.forEach((h, i) => {
+      h.downed = 0;
+      h.invuln = t.hazards.invulnTime;
+      h.mover = createMover(slotNear(game.checkpoint, i));
+      events.push({ type: "respawn", hero: ids[i] ?? "" });
+    });
+  }
+
   // Thrown crystals: simple ballistic flight with bouncy landings.
   for (const c of game.scattered) {
     c.age += dt;
@@ -239,4 +295,4 @@ export function stepGame(
   return events;
 }
 
-const NO_MOVE: InputFrame = { moveX: 0, moveZ: 0, jump: false, spin: false };
+const NO_MOVE: InputFrame = { moveX: 0, moveZ: 0, jump: false, spin: false, interact: false };
