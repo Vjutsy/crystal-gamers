@@ -19,6 +19,8 @@ const GAME_KEYS = new Set([
 
 export function bindKeyboard(target: Window) {
   target.addEventListener("keydown", (e) => {
+    // Typing a nickname or room code is not playing.
+    if (e.target instanceof HTMLInputElement) return;
     if (GAME_KEYS.has(e.code)) e.preventDefault();
     held.add(e.code);
   });
