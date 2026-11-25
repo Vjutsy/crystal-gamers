@@ -37,10 +37,28 @@
       #hud b {
         font-size: 22px;
       }
+      #labels {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        overflow: hidden;
+      }
+      .nick {
+        position: absolute;
+        left: 0;
+        top: 0;
+        padding: 1px 6px;
+        border-radius: 6px;
+        background: rgba(0, 0, 0, 0.45);
+        color: #fff;
+        font-size: 13px;
+        white-space: nowrap;
+      }
     </style>
   </head>
   <body>
     <canvas id="game" tabindex="0"></canvas>
+    <div id="labels"></div>
     <div id="hud">
       <b>Crystal Gamers</b><br />
       <span id="status">…</span><br />

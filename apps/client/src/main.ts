@@ -6,30 +6,20 @@ import { Engine } from "@babylonjs/core/Engines/engine";
 import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
 import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
 import { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
-import type { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { Color3, Color4 } from "@babylonjs/core/Maths/math.color";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
-import { CreateCapsule } from "@babylonjs/core/Meshes/Builders/capsuleBuilder";
 import { CreateDisc } from "@babylonjs/core/Meshes/Builders/discBuilder";
 import { CreatePolyhedron } from "@babylonjs/core/Meshes/Builders/polyhedronBuilder";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { Scene } from "@babylonjs/core/scene";
-import {
-  createGame,
-  type HeroState,
-  initPhysics,
-  type MoverState,
-  PhysicsWorld,
-  SIM_DT,
-  stepGame,
-  testLevel,
-  tuning,
-} from "@cg/shared";
+import { initPhysics, PhysicsWorld, SIM_DT, testLevel, tuning } from "@cg/shared";
 import { maybeShowDebugPanel } from "./debug-panel.ts";
+import { capsuleHeight, FEET, HeroView, heroColors } from "./hero-view.ts";
 import { tr } from "./i18n.ts";
 import { bindKeyboard, readInput } from "./input.ts";
 import { buildCheckpoints, buildLevel, makeMaterial } from "./level-view.ts";
-import { connect, type Net } from "./net.ts";
+import { connect } from "./net.ts";
+import { NetSession, type Session, SoloSession } from "./session.ts";
 
 const canvas = document.getElementById("game") as HTMLCanvasElement;
 const $ = (id: string) => document.getElementById(id) as HTMLElement;
@@ -90,17 +80,8 @@ const crystalMeshes = new Map<number, Mesh>();
 /** Meshes for crystals thrown out by hits, keyed by scattered id. */
 const scatteredMeshes = new Map<number, Mesh>();
 
-// --- Heroes -----------------------------------------------------------------------
-const heroColors = ["#2f6bff", "#ff8a1f", "#9b4dff", "#ff3b3b"];
-const capsuleHeight = 2 * (tuning.capsule.halfHeight + tuning.capsule.radius);
-function makeHero(color: string): Mesh {
-  const m = CreateCapsule("hero", { height: capsuleHeight, radius: tuning.capsule.radius }, scene);
-  m.material = makeMaterial(scene, `hero${color}`, color);
-  shadows.addShadowCaster(m);
-  return m;
-}
-
-const localMesh = makeHero(heroColors[0] ?? "#2f6bff");
+// --- Own hero -----------------------------------------------------------------------
+const localHero = new HeroView(scene, shadows, heroColors[0] ?? "#2f6bff");
 
 // Silhouette: a flat-coloured copy drawn only where the hero is hidden behind level geometry
 // (depth test GREATER), so the isometric camera never loses the player.
@@ -110,10 +91,10 @@ silhouetteMat.emissiveColor = Color3.FromHexString("#7fb0ff");
 silhouetteMat.alpha = 0.55;
 silhouetteMat.depthFunction = Constants.GREATER;
 silhouetteMat.disableDepthWrite = true;
-const silhouette = localMesh.clone("silhouette");
+const silhouette = localHero.mesh.clone("silhouette");
 silhouette.material = silhouetteMat;
 silhouette.renderingGroupId = 1;
-silhouette.parent = localMesh;
+silhouette.parent = localHero.mesh;
 silhouette.position.set(0, 0, 0);
 // Keep group 0's depth buffer when drawing group 1, otherwise GREATER has nothing to compare with.
 scene.setRenderingAutoClearDepthStencil(1, false, false, false);
@@ -125,25 +106,36 @@ const blobMat = makeMaterial(scene, "blob", "#000000");
 blobMat.alpha = 0.35;
 blobMat.disableLighting = true;
 blob.material = blobMat;
-const FEET = tuning.capsule.halfHeight + tuning.capsule.radius;
-const remoteMeshes = new Map<string, Mesh>();
-const ME = "me";
+
+/** Other players' heroes (online only), keyed by session id. */
+const remoteViews = new Map<string, HeroView>();
 
 $("status").textContent = tr.connecting;
 $("hint").textContent = tr.hint;
 bindKeyboard(window);
 canvas.focus();
 
+/** Nickname: ?name=… or the one saved in this browser (the lobby in step 4 will ask for it). */
+function myName(): string | undefined {
+  const fromUrl = new URLSearchParams(location.search).get("name");
+  try {
+    if (fromUrl) localStorage.setItem("cg-name", fromUrl);
+    return fromUrl ?? localStorage.getItem("cg-name") ?? undefined;
+  } catch {
+    return fromUrl ?? undefined;
+  }
+}
+
 async function start() {
   await initPhysics();
   const world = new PhysicsWorld(level);
-  const game = createGame(world, level, [ME]);
-  const hero = () => game.heroes[ME] as HeroState;
-  let prev: MoverState = hero().mover;
   const checkpointViews = buildCheckpoints(scene, level, shadows);
 
-  const net: Net | null = await connect();
+  const net = await connect(myName());
+  const session: Session = net ? new NetSession(world, level, net) : new SoloSession(world, level);
   if (!net) $("status").textContent = tr.offline;
+  // For poking at the game from the browser console (and automated checks) in ?debug mode.
+  if (new URLSearchParams(location.search).has("debug")) Object.assign(window, { cg: { session, world } });
 
   let acc = 0;
   const follow = Vector3.Zero();
@@ -151,69 +143,16 @@ async function start() {
     const dt = Math.min(engine.getDeltaTime() / 1000, 0.25);
     acc += dt;
     while (acc >= SIM_DT) {
-      const input = readInput();
-      prev = hero().mover;
-      stepGame(world, game, { [ME]: input }, SIM_DT);
-      net?.sendInput(input);
+      session.tick(readInput());
       acc -= SIM_DT;
     }
-    const alpha = acc / SIM_DT;
-    const h = hero();
+    const f = session.frame(acc / SIM_DT, dt);
+    const { x, y, z } = f.me.pos;
 
-    if (net) {
-      // Phase 1: the server position wins outright; Phase 2 adds prediction + reconciliation.
-      const players = net.players();
-      $("status").textContent = tr.online(players.size);
-      const me = players.get(net.sessionId);
-      if (me) {
-        h.mover = { ...h.mover, pos: { x: me.x, y: me.y, z: me.z } };
-        prev = h.mover;
-      }
-      for (const [id, p] of players) {
-        if (id === net.sessionId) continue;
-        let m = remoteMeshes.get(id);
-        if (!m) {
-          m = makeHero(heroColors[remoteMeshes.size + 1] ?? "#ffffff");
-          remoteMeshes.set(id, m);
-        }
-        m.position.set(p.x, p.y, p.z);
-      }
-      for (const [id, m] of remoteMeshes) {
-        if (!players.has(id)) {
-          m.dispose();
-          remoteMeshes.delete(id);
-        }
-      }
-    }
-
-    const mover = h.mover;
-    const x = prev.pos.x + (mover.pos.x - prev.pos.x) * alpha;
-    const y = prev.pos.y + (mover.pos.y - prev.pos.y) * alpha;
-    const z = prev.pos.z + (mover.pos.z - prev.pos.z) * alpha;
-    localMesh.position.set(x, y, z);
-
-    // Look: squash while charging, ball while rolling, lying grey when downed, blinking when hurt.
-    const glow = localMesh.material as StandardMaterial;
-    localMesh.rotation.set(0, 0, 0);
-    if (h.downed > 0) {
-      localMesh.scaling.set(1, 1, 1);
-      localMesh.rotation.z = Math.PI / 2;
-      localMesh.position.y = y - FEET + tuning.capsule.radius;
-      glow.emissiveColor.set(0, 0, 0);
-    } else if (mover.spinCharge >= 0) {
-      const lvl = Math.min(3, 1 + Math.floor(mover.spinCharge / tuning.spinDash.levelTime));
-      const pulse = 0.5 + 0.5 * Math.sin(performance.now() / (120 - lvl * 25));
-      localMesh.scaling.set(1.15, 0.7, 1.15);
-      glow.emissiveColor.set(0.15 * lvl * pulse, 0.25 * lvl * pulse, 0.6 * lvl * pulse);
-    } else if (mover.rolling) {
-      localMesh.scaling.set(1.05, 0.55, 1.05);
-      glow.emissiveColor.set(0.1, 0.35, 0.9);
-    } else {
-      localMesh.scaling.set(1, 1, 1);
-      glow.emissiveColor.set(0, 0, 0);
-    }
-    if (h.downed <= 0) localMesh.position.y -= ((1 - localMesh.scaling.y) * capsuleHeight) / 2;
-    localMesh.visibility = h.invuln > 0 && Math.floor(performance.now() / 90) % 2 === 0 ? 0.25 : 1;
+    localHero.update(f.me);
+    localHero.setColor(heroColors[f.mySlot] ?? "#2f6bff");
+    localHero.setName(f.myName);
+    localHero.placeLabel(canvas);
 
     const groundY = world.surfaceBelow({ x, y: y - FEET + 0.05, z }, 12);
     blob.isVisible = groundY !== null;
@@ -225,6 +164,28 @@ async function start() {
       blobMat.alpha = 0.35 * k;
     }
 
+    // Other players.
+    const seen = new Set<string>();
+    for (const o of f.others) {
+      seen.add(o.id);
+      let v = remoteViews.get(o.id);
+      if (!v) {
+        v = new HeroView(scene, shadows, heroColors[o.slot] ?? "#ffffff");
+        remoteViews.set(o.id, v);
+      }
+      v.setColor(heroColors[o.slot] ?? "#ffffff");
+      v.update(o.look);
+      v.mesh.visibility *= o.connected ? 1 : 0.4;
+      v.setName(o.connected ? o.name : `${o.name} …`);
+      v.placeLabel(canvas);
+    }
+    for (const [id, v] of remoteViews) {
+      if (!seen.has(id)) {
+        v.dispose();
+        remoteViews.delete(id);
+      }
+    }
+
     // Camera follows with smoothing.
     follow.set(x, y - capsuleHeight / 2, z);
     Vector3.LerpToRef(camTarget, follow, 1 - 0.0001 ** dt, camTarget);
@@ -232,14 +193,12 @@ async function start() {
 
     // Crystals: hide taken ones, sync thrown ones (they blink before vanishing).
     const spin = performance.now() / 600;
-    for (const c of game.crystals) {
-      const m = crystalMeshes.get(c.id);
-      if (!m) continue;
-      m.isVisible = !c.taken;
+    for (const [id, m] of crystalMeshes) {
+      m.isVisible = !f.taken(id);
       m.rotation.y = spin;
     }
     const alive = new Set<number>();
-    for (const c of game.scattered) {
+    for (const c of f.scattered) {
       alive.add(c.id);
       let m = scatteredMeshes.get(c.id);
       if (!m) {
@@ -248,8 +207,7 @@ async function start() {
       }
       m.position.set(c.pos.x, c.pos.y, c.pos.z);
       m.rotation.y = spin * 3;
-      const fading = c.age > tuning.scatter.life - 1;
-      m.isVisible = !fading || Math.floor(performance.now() / 80) % 2 === 0;
+      m.isVisible = !c.fading || Math.floor(performance.now() / 80) % 2 === 0;
     }
     for (const [id, m] of scatteredMeshes) {
       if (!alive.has(id)) {
@@ -258,8 +216,9 @@ async function start() {
       }
     }
 
-    for (const v of checkpointViews) v.setActive(isSamePlace(v.respawn, game.checkpoint));
-    $("crystals").textContent = tr.crystals(h.crystals, game.crystals.length);
+    for (const v of checkpointViews) v.setActive(isSamePlace(v.respawn, f.checkpoint));
+    $("crystals").textContent = tr.crystals(f.crystals, crystalMeshes.size);
+    if (f.status) $("status").textContent = f.status;
   });
 }
 

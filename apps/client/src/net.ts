@@ -1,17 +1,51 @@
-import { DEFAULT_SERVER_PORT, GAME_ROOM, type InputFrame } from "@cg/shared";
+import {
+  DEFAULT_SERVER_PORT,
+  GAME_ROOM,
+  type InputFrame,
+  type MoverState,
+  normalizeRoomCode,
+  type Vec3,
+} from "@cg/shared";
 import { Client, type Room } from "@colyseus/sdk";
 
-export interface RemotePlayer {
+/** Bad-network simulator (?lag=150&jitter=30&loss=2 in the URL, or the ?debug panel). Applied each way. */
+export const netSim = {
+  /** Round-trip delay to add, ms (half on send, half on receive). */
+  lagMs: Number(new URLSearchParams(location.search).get("lag") ?? 0) || 0,
+  /** Random extra delay per message, ms. */
+  jitterMs: Number(new URLSearchParams(location.search).get("jitter") ?? 0) || 0,
+  /** Share of server snapshots to throw away, % (like lost packets). */
+  lossPct: Number(new URLSearchParams(location.search).get("loss") ?? 0) || 0,
+};
+
+export interface PlayerSnap {
   name: string;
-  x: number;
-  y: number;
-  z: number;
+  slot: number;
+  connected: boolean;
+  lastSeq: number;
+  mover: MoverState;
+  crystals: number;
+  invuln: number;
+  downed: number;
+}
+
+/** Plain copy of the server state at one moment (so it can be delayed and buffered). */
+export interface Snapshot {
+  tick: number;
+  players: Map<string, PlayerSnap>;
+  taken: boolean[];
+  scattered: { id: number; pos: Vec3 }[];
+  checkpoint: Vec3;
 }
 
 export interface Net {
   sessionId: string;
-  players: () => Map<string, RemotePlayer>;
-  sendInput: (input: InputFrame) => void;
+  roomId: string;
+  send(seq: number, input: InputFrame): void;
+  /** Snapshots that have "arrived" (after simulated delay), oldest first. Empties the queue. */
+  takeSnapshots(): Snapshot[];
+  /** Last measured round trip, ms (includes simulated lag). */
+  pingMs(): number;
 }
 
 function serverUrl(): string | null {
@@ -23,29 +57,106 @@ function serverUrl(): string | null {
   return null; // no server configured for this deployment yet → solo mode
 }
 
-/** Connects to the game room, or resolves null so the game runs in solo mode. */
-export async function connect(): Promise<Net | null> {
+// biome-ignore lint/suspicious/noExplicitAny: decoded schema state
+function toSnapshot(state: any): Snapshot {
+  const players = new Map<string, PlayerSnap>();
+  // biome-ignore lint/suspicious/noExplicitAny: decoded schema state
+  state.players?.forEach((p: any, id: string) => {
+    players.set(id, {
+      name: p.name,
+      slot: p.slot,
+      connected: p.connected,
+      lastSeq: p.lastSeq,
+      crystals: p.crystals,
+      invuln: p.invuln,
+      downed: p.downed,
+      mover: {
+        pos: { x: p.x, y: p.y, z: p.z },
+        vel: { x: p.vx, y: p.vy, z: p.vz },
+        grounded: p.grounded,
+        coyote: p.coyote,
+        jumpBuffer: p.jumpBuffer,
+        jumpHeld: p.jumpHeld,
+        jumpCuttable: p.jumpCuttable,
+        facing: { x: p.facingX, z: p.facingZ },
+        spinCharge: p.spinCharge,
+        rolling: p.rolling,
+      },
+    });
+  });
+  const scattered: Snapshot["scattered"] = [];
+  // biome-ignore lint/suspicious/noExplicitAny: decoded schema state
+  state.scattered?.forEach((c: any, id: string) => {
+    scattered.push({ id: Number(id), pos: { x: c.x, y: c.y, z: c.z } });
+  });
+  return {
+    tick: state.tick,
+    players,
+    taken: [...(state.taken ?? [])],
+    scattered,
+    checkpoint: { x: state.cpX, y: state.cpY, z: state.cpZ },
+  };
+}
+
+/** Delay (ms) for one direction of the simulated network; never earlier than the previous message. */
+function makeDelayer() {
+  let lastAt = 0;
+  return () => {
+    const at = Math.max(lastAt, performance.now() + netSim.lagMs / 2 + Math.random() * netSim.jitterMs);
+    lastAt = at;
+    return at - performance.now();
+  };
+}
+
+/** Connects to a room, or resolves null so the game runs in solo mode. ?room=CODE joins that room. */
+export async function connect(name?: string): Promise<Net | null> {
   const url = serverUrl();
   if (!url) return null;
   try {
     const client = new Client(url);
-    const room: Room = await withTimeout(client.joinOrCreate(GAME_ROOM, {}), 3000);
-    // Numbered inputs (ADR-0003); the lobby with room codes arrives in SPEC-0002 step 4.
-    let seq = 0;
+    const code = normalizeRoomCode(new URLSearchParams(location.search).get("room") ?? "");
+    const opts = { name };
+    const room: Room = await withTimeout(
+      code ? client.joinById(code, opts) : client.joinOrCreate(GAME_ROOM, opts),
+      4000,
+    );
+
+    const incoming: { at: number; snap: Snapshot }[] = [];
+    const recvDelay = makeDelayer();
+    const sendDelay = makeDelayer();
+    room.onStateChange((state) => {
+      if (Math.random() * 100 < netSim.lossPct) return;
+      incoming.push({ at: performance.now() + recvDelay(), snap: toSnapshot(state) });
+    });
+
+    let ping = 0;
+    const measure = () => {
+      const t0 = performance.now();
+      room.ping(() => {
+        ping = performance.now() - t0 + netSim.lagMs;
+      });
+    };
+    measure();
+    setInterval(measure, 1000);
+
     return {
       sessionId: room.sessionId,
-      players: () => {
-        const out = new Map<string, RemotePlayer>();
-        const players = (room.state as { players?: Map<string, RemotePlayer> }).players;
-        players?.forEach((p, id) => {
-          out.set(id, { name: p.name, x: p.x, y: p.y, z: p.z });
-        });
-        return out;
+      roomId: room.roomId,
+      send: (seq, input) => {
+        const delay = sendDelay();
+        if (delay <= 0) room.send("input", { seq, input });
+        else setTimeout(() => room.send("input", { seq, input }), delay);
       },
-      sendInput: (input) => {
-        seq++;
-        room.send("input", { seq, input });
+      takeSnapshots: () => {
+        const now = performance.now();
+        const ready: Snapshot[] = [];
+        while (incoming.length > 0 && (incoming[0]?.at ?? Number.POSITIVE_INFINITY) <= now) {
+          const next = incoming.shift();
+          if (next) ready.push(next.snap);
+        }
+        return ready;
       },
+      pingMs: () => ping,
     };
   } catch (err) {
     console.warn("Server unavailable, running solo:", err);

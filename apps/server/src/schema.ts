@@ -3,6 +3,8 @@ import { type SchemaType, schema, t } from "@colyseus/schema";
 /**
  * Everything a client needs about one hero: enough to draw it (others) and
  * to reconcile its own prediction (ADR-0003), i.e. the full MoverState plus game flags.
+ * Mover fields are float64: the client replays from them, and float32 rounding would make
+ * every reconciliation a tiny correction instead of an exact match.
  */
 export const PlayerState = schema(
   {
@@ -12,20 +14,20 @@ export const PlayerState = schema(
     connected: t.boolean(),
     /** Last input seq the server has applied for this player. */
     lastSeq: t.uint32(),
-    x: t.number(),
-    y: t.number(),
-    z: t.number(),
-    vx: t.number(),
-    vy: t.number(),
-    vz: t.number(),
+    x: t.float64(),
+    y: t.float64(),
+    z: t.float64(),
+    vx: t.float64(),
+    vy: t.float64(),
+    vz: t.float64(),
     grounded: t.boolean(),
-    coyote: t.number(),
-    jumpBuffer: t.number(),
+    coyote: t.float64(),
+    jumpBuffer: t.float64(),
     jumpHeld: t.boolean(),
     jumpCuttable: t.boolean(),
-    facingX: t.number(),
-    facingZ: t.number(),
-    spinCharge: t.number(),
+    facingX: t.float64(),
+    facingZ: t.float64(),
+    spinCharge: t.float64(),
     rolling: t.boolean(),
     crystals: t.uint16(),
     invuln: t.number(),

@@ -1,4 +1,5 @@
 import { tuning } from "@cg/shared";
+import { netSim } from "./net.ts";
 
 const STORAGE_KEY = "cg-tuning-v1";
 
@@ -88,6 +89,12 @@ export async function maybeShowDebugPanel() {
       controllers.push(c);
     }
   }
+
+  // Bad-network simulator (also ?lag=150&jitter=30&loss=2 in the URL). Not saved: easy to forget it is on.
+  const netFolder = gui.addFolder("мережа (симулятор)");
+  netFolder.add(netSim, "lagMs", 0, 500, 10).name("затримка, мс");
+  netFolder.add(netSim, "jitterMs", 0, 200, 5).name("джитер, мс");
+  netFolder.add(netSim, "lossPct", 0, 20, 1).name("втрата знімків, %");
 
   const actions = {
     copyJson: async () => {
