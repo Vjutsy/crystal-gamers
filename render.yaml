@@ -1,0 +1,22 @@
+# Render Blueprint for the game server (SPEC-0002 step 5). Free plan: sleeps after ~15 min idle,
+# wakes on the next request (the lobby shows "server is waking up" meanwhile).
+services:
+  - type: web
+    name: crystal-gamers-server
+    runtime: node
+    plan: free
+    region: frankfurt
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter @cg/server build
+    startCommand: node apps/server/dist/index.js
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    # Client-only or docs changes do not redeploy the server.
+    buildFilter:
+      paths:
+        - apps/server/**
+        - packages/shared/**
+        - pnpm-lock.yaml
+        - render.yaml
+    envVars:
+      - key: NODE_VERSION
+        value: "22"

@@ -19,6 +19,7 @@ import {
 } from "@cg/shared";
 import { type Client, Room } from "@colyseus/core";
 import { GameState, PlayerState, ScatteredState } from "./schema.ts";
+import { tickStats } from "./tick-stats.ts";
 
 /** Seconds a dropped player keeps their hero and seat. */
 export const RECONNECT_SECONDS = 20;
@@ -117,6 +118,7 @@ export class GameRoom extends Room<{ state: GameState }> {
   }
 
   private tick() {
+    const t0 = performance.now();
     const inputs: Record<string, InputFrame> = {};
     for (const [id, seat] of this.seats) {
       const next = seat.queue.shift();
@@ -130,6 +132,7 @@ export class GameRoom extends Room<{ state: GameState }> {
     this.state.tick++;
     for (const id of this.seats.keys()) this.writeHero(id);
     this.writeWorld();
+    tickStats.add(performance.now() - t0);
   }
 
   private writeHero(id: string) {
