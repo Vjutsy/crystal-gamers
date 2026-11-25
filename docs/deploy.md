@@ -3,8 +3,9 @@
 ## Клієнт — GitHub Pages
 
 Збирається й публікується автоматично з `main` (`.github/workflows/deploy-client.yml`).
-Адреса сервера береться зі змінної репозиторію `SERVER_URL` (Settings → Secrets and variables → Actions → Variables).
-Поки її немає, гра на Pages працює лише соло.
+Адреса сервера записана в `apps/client/src/net.ts` (`HOSTED_SERVER_URL` = `wss://crystal-gamers-server.onrender.com`).
+Її можна перевизначити змінною репозиторію `SERVER_URL` (Settings → Secrets and variables → Actions → Variables).
+На `localhost` клієнт завжди йде на локальний сервер.
 
 ## Сервер — Render Free
 
@@ -13,9 +14,11 @@
 1. Зайти на render.com через GitHub-акаунт.
 2. New → Blueprint → вибрати репозиторій `crystal-gamers` → Apply.
 3. Дочекатися деплою, відкрити `https://<назва>.onrender.com/health` — має бути `{"ok":true,...}`.
-4. У GitHub додати змінну `SERVER_URL` = `wss://<назва>.onrender.com` і перезапустити workflow «Deploy client».
+4. Якщо адреса інша — оновити `HOSTED_SERVER_URL` у `apps/client/src/net.ts`.
 
-Далі сервер оновлюється сам після кожного злиття в `main`, якщо змінилися `apps/server`, `packages/shared` чи lock-файл.
+Зараз Blueprint підключено як **публічний репозиторій** (застосунок Render на GitHub встановити не вдалося), тому після змін у сервері треба натиснути **Manual Deploy → Deploy latest commit** на сторінці сервісу в Render.
+
+Коли GitHub-акаунт буде підключено до Render, сервер оновлюватиметься сам після злиття в `main` (якщо змінилися `apps/server`, `packages/shared` чи lock-файл).
 
 ## Перевірка навантаження
 

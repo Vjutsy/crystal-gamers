@@ -41,13 +41,16 @@ export interface Net {
   pingMs(): number;
 }
 
+/** Public game server on Render Free (docs/deploy.md). VITE_SERVER_URL overrides it. */
+const HOSTED_SERVER_URL = "wss://crystal-gamers-server.onrender.com";
+
 export function serverUrl(): string | null {
   const fromEnv = import.meta.env.VITE_SERVER_URL as string | undefined;
   if (fromEnv) return fromEnv;
   if (location.hostname === "localhost" || location.hostname === "127.0.0.1") {
     return `ws://${location.hostname}:${DEFAULT_SERVER_PORT}`;
   }
-  return null; // no server configured for this deployment yet → solo mode
+  return HOSTED_SERVER_URL;
 }
 
 // biome-ignore lint/suspicious/noExplicitAny: decoded schema state
