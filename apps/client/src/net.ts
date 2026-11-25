@@ -30,6 +30,8 @@ export async function connect(): Promise<Net | null> {
   try {
     const client = new Client(url);
     const room: Room = await withTimeout(client.joinOrCreate(GAME_ROOM, {}), 3000);
+    // Numbered inputs (ADR-0003); the lobby with room codes arrives in SPEC-0002 step 4.
+    let seq = 0;
     return {
       sessionId: room.sessionId,
       players: () => {
@@ -40,7 +42,10 @@ export async function connect(): Promise<Net | null> {
         });
         return out;
       },
-      sendInput: (input) => room.send("input", input),
+      sendInput: (input) => {
+        seq++;
+        room.send("input", { seq, input });
+      },
     };
   } catch (err) {
     console.warn("Server unavailable, running solo:", err);
