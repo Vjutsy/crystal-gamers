@@ -5,6 +5,7 @@ const dict = {
     crystals: (n: number, total: number) => `Кристали: ${n} / ${total}`,
     hint: "WASD / стрілки — рух, Пробіл — стрибок, Shift — спін-деш (тримай і відпусти), E — підняти друга",
     invite: "Скопіювати запрошення",
+    disconnected: "(зв'язок втрачено)",
     copied: "Посилання скопійовано ✓",
     lobby: {
       name: "Нікнейм",
@@ -29,6 +30,7 @@ const dict = {
     crystals: (n: number, total: number) => `Crystals: ${n} / ${total}`,
     hint: "WASD / arrows — move, Space — jump, Shift — spin dash (hold and release), E — revive a friend",
     invite: "Copy invite link",
+    disconnected: "(connection lost)",
     copied: "Link copied ✓",
     lobby: {
       name: "Nickname",

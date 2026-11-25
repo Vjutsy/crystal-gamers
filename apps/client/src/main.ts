@@ -167,7 +167,7 @@ async function start() {
       v.setColor(heroColors[o.slot] ?? "#ffffff");
       v.update(o.look);
       v.mesh.visibility *= o.connected ? 1 : 0.4;
-      v.setName(o.connected ? o.name : `${o.name} …`);
+      v.setName(o.connected ? o.name : `${o.name} ${tr.disconnected}`);
       v.placeLabel(canvas);
     }
     for (const [id, v] of remoteViews) {

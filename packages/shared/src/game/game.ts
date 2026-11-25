@@ -200,7 +200,8 @@ export function stepGame(
       }
     }
 
-    // Revive: a new press of E next to a downed teammate gets it up on the spot.
+    // Revive: a new press of E next to a downed teammate gets it up beside the reviver
+    // (the reviver stands on safe ground; the downed spot is often the hazard itself).
     const interactPressed = (input?.interact ?? false) && !h.interactHeld;
     h.interactHeld = input?.interact ?? false;
     if (interactPressed) {
@@ -210,7 +211,7 @@ export function stepGame(
         if (near(o.mover.pos, h.mover.pos, t.coop.reviveRadius)) {
           o.downed = 0;
           o.invuln = t.coop.reviveInvuln;
-          o.mover = { ...createMover(o.mover.pos), facing: o.mover.facing };
+          o.mover = { ...createMover(h.mover.pos), facing: o.mover.facing };
           events.push({ type: "revive", hero: otherId, by: id });
           break;
         }

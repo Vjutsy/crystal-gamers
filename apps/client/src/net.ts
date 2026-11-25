@@ -143,11 +143,12 @@ export async function wakeServer(url: string, onSlow: () => void, timeoutMs = 90
 export async function connect(url: string, req: JoinRequest, name: string): Promise<Net> {
   const client = new Client(url);
   const opts = { name };
-  let room: Room;
   try {
-    room = await withTimeout(
-      req.mode === "create" ? client.create(GAME_ROOM, opts) : client.joinById(req.code, opts),
-      10_000,
+    return wrap(
+      await withTimeout(
+        req.mode === "create" ? client.create(GAME_ROOM, opts) : client.joinById(req.code, opts),
+        10_000,
+      ),
     );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -155,6 +156,23 @@ export async function connect(url: string, req: JoinRequest, name: string): Prom
     if (/locked|full|maxClients/i.test(msg)) throw new JoinFailed("full");
     throw new JoinFailed("unreachable");
   }
+}
+
+/** Takes back our own seat (same hero, colour and crystals) after a reload or a closed tab. */
+export async function reconnect(url: string, token: string): Promise<Net | null> {
+  try {
+    return wrap(await withTimeout(new Client(url).reconnect(token), 6000));
+  } catch {
+    return null; // seat already given up (more than 20 s) or the room is gone
+  }
+}
+
+function wrap(room: Room): Net {
+  const seat = { room: room.roomId, token: room.reconnectionToken };
+  saveSeat(seat);
+  // Keep the "last seen" time fresh so a later visit knows whether the seat can still be waiting.
+  setInterval(() => saveSeat(seat), 2000);
+  addEventListener("pagehide", () => saveSeat(seat));
 
   const incoming: { at: number; snap: Snapshot }[] = [];
   const recvDelay = makeDelayer();
@@ -191,6 +209,38 @@ export async function connect(url: string, req: JoinRequest, name: string): Prom
     },
     pingMs: () => ping,
   };
+}
+
+/** Our seat in a room, remembered across reloads (sessionStorage) and reopened links (localStorage). */
+interface Seat {
+  room: string;
+  token: string;
+}
+const SEAT_KEY = "cg-seat";
+
+function saveSeat(seat: Seat) {
+  const value = JSON.stringify({ ...seat, at: Date.now() });
+  try {
+    sessionStorage.setItem(SEAT_KEY, value);
+    localStorage.setItem(SEAT_KEY, value);
+  } catch {
+    // Storage unavailable: reconnecting just will not work.
+  }
+}
+
+/** The seat for this room if it may still be held for us (the server keeps it RECONNECT_SECONDS). */
+export function savedSeat(room: string, maxAgeMs = 20_000): Seat | null {
+  for (const store of [() => sessionStorage, () => localStorage]) {
+    try {
+      const raw = store().getItem(SEAT_KEY);
+      if (!raw) continue;
+      const s = JSON.parse(raw) as Seat & { at: number };
+      if (s.room === room && Date.now() - s.at < maxAgeMs && typeof s.token === "string") return s;
+    } catch {
+      // ignore junk
+    }
+  }
+  return null;
 }
 
 function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {

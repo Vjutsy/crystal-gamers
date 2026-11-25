@@ -1,6 +1,15 @@
 import { normalizeRoomCode } from "@cg/shared";
 import { tr } from "./i18n.ts";
-import { connect, JoinFailed, type JoinRequest, type Net, serverUrl, wakeServer } from "./net.ts";
+import {
+  connect,
+  JoinFailed,
+  type JoinRequest,
+  type Net,
+  reconnect,
+  savedSeat,
+  serverUrl,
+  wakeServer,
+} from "./net.ts";
 
 export type LobbyChoice = { kind: "solo" } | { kind: "online"; net: Net };
 
@@ -45,10 +54,21 @@ function el<K extends keyof HTMLElementTagNameMap>(
  * Start screen: nickname, create a room or join by code (prefilled from ?room=CODE), or solo.
  * Without a configured server it goes straight to solo play.
  */
-export function runLobby(): Promise<LobbyChoice> {
+export async function runLobby(): Promise<LobbyChoice> {
   const url = serverUrl();
-  if (!url) return Promise.resolve({ kind: "solo" });
+  if (!url) return { kind: "solo" };
 
+  // Came back within the grace period (reload, reopened tab or link): take our own seat back.
+  const code = normalizeRoomCode(new URLSearchParams(location.search).get("room") ?? "");
+  const seat = code ? savedSeat(code) : null;
+  if (seat) {
+    const net = await reconnect(url, seat.token);
+    if (net) return { kind: "online", net };
+  }
+  return showLobby(url);
+}
+
+function showLobby(url: string): Promise<LobbyChoice> {
   return new Promise((resolve) => {
     const box = el("div", { id: "lobby" });
     const card = el("form", { className: "card" });
@@ -93,7 +113,6 @@ export function runLobby(): Promise<LobbyChoice> {
     };
 
     async function go(req: JoinRequest) {
-      if (!url) return;
       const nick = name.value.trim();
       if (nick) saveName(nick);
       busy(true);
