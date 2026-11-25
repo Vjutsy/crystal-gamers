@@ -18,7 +18,7 @@ import { capsuleHeight, FEET, HeroView, heroColors } from "./hero-view.ts";
 import { tr } from "./i18n.ts";
 import { bindKeyboard, readInput } from "./input.ts";
 import { buildCheckpoints, buildLevel, makeMaterial } from "./level-view.ts";
-import { connect } from "./net.ts";
+import { inviteLink, runLobby } from "./lobby.ts";
 import { NetSession, type Session, SoloSession } from "./session.ts";
 
 const canvas = document.getElementById("game") as HTMLCanvasElement;
@@ -110,30 +110,21 @@ blob.material = blobMat;
 /** Other players' heroes (online only), keyed by session id. */
 const remoteViews = new Map<string, HeroView>();
 
-$("status").textContent = tr.connecting;
 $("hint").textContent = tr.hint;
 bindKeyboard(window);
 canvas.focus();
-
-/** Nickname: ?name=… or the one saved in this browser (the lobby in step 4 will ask for it). */
-function myName(): string | undefined {
-  const fromUrl = new URLSearchParams(location.search).get("name");
-  try {
-    if (fromUrl) localStorage.setItem("cg-name", fromUrl);
-    return fromUrl ?? localStorage.getItem("cg-name") ?? undefined;
-  } catch {
-    return fromUrl ?? undefined;
-  }
-}
 
 async function start() {
   await initPhysics();
   const world = new PhysicsWorld(level);
   const checkpointViews = buildCheckpoints(scene, level, shadows);
 
-  const net = await connect(myName());
+  const choice = await runLobby();
+  const net = choice.kind === "online" ? choice.net : null;
   const session: Session = net ? new NetSession(world, level, net) : new SoloSession(world, level);
-  if (!net) $("status").textContent = tr.offline;
+  if (net) showInvite(net.roomId);
+  else $("status").textContent = tr.solo;
+  canvas.focus();
   // For poking at the game from the browser console (and automated checks) in ?debug mode.
   if (new URLSearchParams(location.search).has("debug")) Object.assign(window, { cg: { session, world } });
 
@@ -219,6 +210,26 @@ async function start() {
     for (const v of checkpointViews) v.setActive(isSamePlace(v.respawn, f.checkpoint));
     $("crystals").textContent = tr.crystals(f.crystals, crystalMeshes.size);
     if (f.status) $("status").textContent = f.status;
+  });
+}
+
+/** "Copy invite" button in the HUD: the link drops friends straight into this room's lobby. */
+function showInvite(code: string) {
+  const btn = $("invite") as HTMLButtonElement;
+  btn.hidden = false;
+  btn.textContent = tr.invite;
+  btn.addEventListener("click", async () => {
+    btn.blur(); // otherwise Space (jump) would press it again
+    canvas.focus();
+    try {
+      await navigator.clipboard.writeText(inviteLink(code));
+      btn.textContent = tr.copied;
+    } catch {
+      btn.textContent = inviteLink(code);
+    }
+    setTimeout(() => {
+      btn.textContent = tr.invite;
+    }, 2000);
   });
 }
 

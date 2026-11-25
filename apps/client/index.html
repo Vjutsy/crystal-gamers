@@ -37,6 +37,103 @@
       #hud b {
         font-size: 22px;
       }
+      #invite {
+        margin-top: 6px;
+        pointer-events: auto;
+        font: inherit;
+        padding: 4px 10px;
+        border: 0;
+        border-radius: 8px;
+        background: rgba(0, 0, 0, 0.4);
+        color: #fff;
+        cursor: pointer;
+      }
+      #lobby {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        background: rgba(20, 30, 60, 0.55);
+      }
+      #lobby .card {
+        width: min(340px, 90vw);
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        padding: 22px;
+        border-radius: 14px;
+        background: #1d2333;
+        color: #fff;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+      }
+      #lobby h1 {
+        margin: 0 0 6px;
+        font-size: 24px;
+        text-align: center;
+      }
+      #lobby label {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        font-size: 13px;
+        opacity: 0.85;
+      }
+      #lobby input,
+      #lobby button {
+        font: inherit;
+        font-size: 16px;
+        padding: 9px 12px;
+        border-radius: 8px;
+        border: 1px solid #3a4560;
+      }
+      #lobby input {
+        background: #111622;
+        color: #fff;
+      }
+      #lobby .code {
+        width: 5.5em;
+        text-transform: uppercase;
+        letter-spacing: 0.15em;
+      }
+      #lobby button {
+        background: #2fd5c8;
+        color: #10202a;
+        border: 0;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      #lobby button.quiet {
+        background: transparent;
+        color: #cfd6e6;
+        border: 1px solid #3a4560;
+        font-weight: 400;
+      }
+      #lobby button:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      #lobby .row {
+        display: flex;
+        gap: 8px;
+      }
+      #lobby .row button {
+        flex: 1;
+      }
+      #lobby .or {
+        margin: 2px 0 -4px;
+        font-size: 13px;
+        opacity: 0.7;
+        text-align: center;
+      }
+      #lobby .message {
+        min-height: 1.3em;
+        margin: 0;
+        font-size: 13px;
+        opacity: 0.9;
+      }
+      #lobby .message.error {
+        color: #ff8f8f;
+      }
       #labels {
         position: fixed;
         inset: 0;
@@ -63,7 +160,8 @@
       <b>Crystal Gamers</b><br />
       <span id="status">…</span><br />
       <span id="crystals"></span><br />
-      <span id="hint"></span>
+      <span id="hint"></span><br />
+      <button id="invite" type="button" hidden></button>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

@@ -1,11 +1,4 @@
-import {
-  DEFAULT_SERVER_PORT,
-  GAME_ROOM,
-  type InputFrame,
-  type MoverState,
-  normalizeRoomCode,
-  type Vec3,
-} from "@cg/shared";
+import { DEFAULT_SERVER_PORT, GAME_ROOM, type InputFrame, type MoverState, type Vec3 } from "@cg/shared";
 import { Client, type Room } from "@colyseus/sdk";
 
 /** Bad-network simulator (?lag=150&jitter=30&loss=2 in the URL, or the ?debug panel). Applied each way. */
@@ -48,7 +41,7 @@ export interface Net {
   pingMs(): number;
 }
 
-function serverUrl(): string | null {
+export function serverUrl(): string | null {
   const fromEnv = import.meta.env.VITE_SERVER_URL as string | undefined;
   if (fromEnv) return fromEnv;
   if (location.hostname === "localhost" || location.hostname === "127.0.0.1") {
@@ -108,60 +101,93 @@ function makeDelayer() {
   };
 }
 
-/** Connects to a room, or resolves null so the game runs in solo mode. ?room=CODE joins that room. */
-export async function connect(name?: string): Promise<Net | null> {
-  const url = serverUrl();
-  if (!url) return null;
-  try {
-    const client = new Client(url);
-    const code = normalizeRoomCode(new URLSearchParams(location.search).get("room") ?? "");
-    const opts = { name };
-    const room: Room = await withTimeout(
-      code ? client.joinById(code, opts) : client.joinOrCreate(GAME_ROOM, opts),
-      4000,
-    );
+export type JoinRequest = { mode: "create" } | { mode: "join"; code: string };
 
-    const incoming: { at: number; snap: Snapshot }[] = [];
-    const recvDelay = makeDelayer();
-    const sendDelay = makeDelayer();
-    room.onStateChange((state) => {
-      if (Math.random() * 100 < netSim.lossPct) return;
-      incoming.push({ at: performance.now() + recvDelay(), snap: toSnapshot(state) });
-    });
+/** Why joining failed, for a human-readable message in the lobby. */
+export type JoinError = "not-found" | "full" | "unreachable";
 
-    let ping = 0;
-    const measure = () => {
-      const t0 = performance.now();
-      room.ping(() => {
-        ping = performance.now() - t0 + netSim.lagMs;
-      });
-    };
-    measure();
-    setInterval(measure, 1000);
-
-    return {
-      sessionId: room.sessionId,
-      roomId: room.roomId,
-      send: (seq, input) => {
-        const delay = sendDelay();
-        if (delay <= 0) room.send("input", { seq, input });
-        else setTimeout(() => room.send("input", { seq, input }), delay);
-      },
-      takeSnapshots: () => {
-        const now = performance.now();
-        const ready: Snapshot[] = [];
-        while (incoming.length > 0 && (incoming[0]?.at ?? Number.POSITIVE_INFINITY) <= now) {
-          const next = incoming.shift();
-          if (next) ready.push(next.snap);
-        }
-        return ready;
-      },
-      pingMs: () => ping,
-    };
-  } catch (err) {
-    console.warn("Server unavailable, running solo:", err);
-    return null;
+export class JoinFailed extends Error {
+  constructor(readonly reason: JoinError) {
+    super(reason);
   }
+}
+
+/**
+ * Free hosting sleeps when idle and takes up to ~a minute to start. Pings /health until it
+ * answers; calls `onSlow` once if that takes longer than a moment. Resolves false on timeout.
+ */
+export async function wakeServer(url: string, onSlow: () => void, timeoutMs = 90_000): Promise<boolean> {
+  const health = `${url.replace(/^ws/, "http").replace(/\/$/, "")}/health`;
+  const t0 = performance.now();
+  const slowTimer = setTimeout(onSlow, 1500);
+  try {
+    while (performance.now() - t0 < timeoutMs) {
+      try {
+        // no-cors: we only need to know the server answered, not read the body.
+        await withTimeout(fetch(health, { mode: "no-cors", cache: "no-store" }), 10_000);
+        return true;
+      } catch {
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+    }
+    return false;
+  } finally {
+    clearTimeout(slowTimer);
+  }
+}
+
+/** Creates a room or joins one by code. Throws JoinFailed. */
+export async function connect(url: string, req: JoinRequest, name: string): Promise<Net> {
+  const client = new Client(url);
+  const opts = { name };
+  let room: Room;
+  try {
+    room = await withTimeout(
+      req.mode === "create" ? client.create(GAME_ROOM, opts) : client.joinById(req.code, opts),
+      10_000,
+    );
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (/not found/i.test(msg)) throw new JoinFailed("not-found");
+    if (/locked|full|maxClients/i.test(msg)) throw new JoinFailed("full");
+    throw new JoinFailed("unreachable");
+  }
+
+  const incoming: { at: number; snap: Snapshot }[] = [];
+  const recvDelay = makeDelayer();
+  const sendDelay = makeDelayer();
+  room.onStateChange((state) => {
+    if (Math.random() * 100 < netSim.lossPct) return;
+    incoming.push({ at: performance.now() + recvDelay(), snap: toSnapshot(state) });
+  });
+
+  let ping = 0;
+  const measure = () =>
+    room.ping((ms) => {
+      ping = ms + netSim.lagMs;
+    });
+  measure();
+  setInterval(measure, 1000);
+
+  return {
+    sessionId: room.sessionId,
+    roomId: room.roomId,
+    send: (seq, input) => {
+      const delay = sendDelay();
+      if (delay <= 0) room.send("input", { seq, input });
+      else setTimeout(() => room.send("input", { seq, input }), delay);
+    },
+    takeSnapshots: () => {
+      const now = performance.now();
+      const ready: Snapshot[] = [];
+      while (incoming.length > 0 && (incoming[0]?.at ?? Number.POSITIVE_INFINITY) <= now) {
+        const next = incoming.shift();
+        if (next) ready.push(next.snap);
+      }
+      return ready;
+    },
+    pingMs: () => ping,
+  };
 }
 
 function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
