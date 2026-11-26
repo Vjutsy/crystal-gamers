@@ -38,7 +38,7 @@ export class HeroView {
     readonly hero: HeroId,
   ) {
     const def = heroes[hero];
-    this.radius = def.capsule.radius;
+    this.radius = def.lookRadius ?? def.capsule.radius;
     this.height = 2 * heroFeet(hero);
     this.mesh = CreateCapsule("hero", { height: this.height, radius: this.radius }, scene);
     this.mat = makeMaterial(scene, `hero-${hero}`, def.color);

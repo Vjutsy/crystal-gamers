@@ -9,8 +9,13 @@ export interface HeroDef {
   name: string;
   /** Greybox colour until Phase 6 art. */
   color: string;
-  /** Body: capsule cylinder half-height and radius, m (total height = 2·(halfHeight + radius)). */
+  /** Physics body: capsule cylinder half-height and radius, m (total height = 2·(halfHeight + radius)). */
   capsule: { halfHeight: number; radius: number };
+  /**
+   * Drawn radius when it differs from the physics one. Rapier's auto-step fails for capsules
+   * thinner than ~0.36 m (Erl got stuck on stairs), so a thin hero gets a wider body than it looks.
+   */
+  lookRadius?: number;
   /**
    * How this hero's body changes the shared movement numbers: multipliers on `tuning`,
    * so the ?debug panel still tunes everyone together.
@@ -82,7 +87,8 @@ export const heroes: Record<HeroId, HeroDef> = {
     id: "erl",
     name: "Ерл",
     color: "#9cc9e3",
-    capsule: { halfHeight: 0.62, radius: 0.28 },
+    capsule: { halfHeight: 0.54, radius: 0.36 },
+    lookRadius: 0.28,
     scale: { ...NORMAL, accel: 1.1, maxSpeed: 1.05, gravity: 0.65, airControl: 1.6 },
   },
   /** Widest and short-ish: slowest to get going and to turn, hard to push around, by far the strongest spin dash. */
@@ -104,6 +110,9 @@ export const heroes: Record<HeroId, HeroDef> = {
     },
   },
 };
+
+/** Narrowest physics capsule that still climbs stairs reliably (see `lookRadius`). */
+export const MIN_BODY_RADIUS = 0.36;
 
 export function isHeroId(v: unknown): v is HeroId {
   return typeof v === "string" && (HERO_IDS as readonly string[]).includes(v);

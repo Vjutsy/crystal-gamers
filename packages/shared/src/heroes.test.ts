@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { SIM_DT } from "./constants.ts";
-import { type HeroId, heroTuning, standHeight } from "./heroes.ts";
+import { type HeroId, heroes, heroTuning, MIN_BODY_RADIUS, standHeight } from "./heroes.ts";
 import { NO_INPUT } from "./input.ts";
 import type { Level } from "./level/types.ts";
 import { createMover, type MoverState, stepMover } from "./movement/mover.ts";
@@ -84,6 +84,10 @@ describe("heroes move according to their build (SPEC-0003)", () => {
 
   it("everyone can still clear a 1.4 m step (the test level's highest jump-up)", () => {
     for (const x of Object.values(m)) expect(x.jumpHeight).toBeGreaterThan(1.4);
+  });
+
+  it("no physics body is thinner than stairs allow", () => {
+    for (const h of Object.values(heroes)) expect(h.capsule.radius).toBeGreaterThanOrEqual(MIN_BODY_RADIUS);
   });
 
   it("Emi and Rubfir are knocked back least; Emi's spin dash is strongest", () => {
