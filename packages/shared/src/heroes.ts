@@ -17,6 +17,8 @@ export interface HeroDef {
    */
   scale: {
     accel: number;
+    /** How quickly the hero stops when no direction is held (heavy heroes slide). */
+    friction: number;
     turnDecel: number;
     maxSpeed: number;
     jumpVelocity: number;
@@ -29,6 +31,7 @@ export interface HeroDef {
 
 const NORMAL: HeroDef["scale"] = {
   accel: 1,
+  friction: 1,
   turnDecel: 1,
   maxSpeed: 1,
   jumpVelocity: 1,
@@ -39,7 +42,7 @@ const NORMAL: HeroDef["scale"] = {
 };
 
 export const heroes: Record<HeroId, HeroDef> = {
-  /** Tallest and massive: long stride, top ground speed, heavy low jump, barely knocked back. */
+  /** Tallest and massive: slow to start but the fastest once running, slides when stopping, heavy low jump, stiff in the air, barely knocked back. */
   rubfir: {
     id: "rubfir",
     name: "Рубфір",
@@ -47,31 +50,42 @@ export const heroes: Record<HeroId, HeroDef> = {
     capsule: { halfHeight: 0.75, radius: 0.45 },
     scale: {
       ...NORMAL,
-      accel: 0.8,
-      turnDecel: 0.8,
-      maxSpeed: 1.12,
+      accel: 0.6,
+      friction: 0.5,
+      turnDecel: 0.55,
+      maxSpeed: 1.25,
       jumpVelocity: 0.9,
-      gravity: 1.12,
-      knockback: 0.45,
+      gravity: 1.25,
+      airControl: 0.6,
+      knockback: 0.35,
     },
   },
-  /** Smallest: quickest to start and turn, springy jump, lowest top speed. */
+  /** Smallest: starts, stops and turns almost instantly, springy jump, nimble in the air, lowest top speed. */
   nevetes: {
     id: "nevetes",
     name: "Неветес",
     color: "#e58fb8",
     capsule: { halfHeight: 0.22, radius: 0.36 },
-    scale: { ...NORMAL, accel: 1.35, turnDecel: 1.3, maxSpeed: 0.86, jumpVelocity: 1.05, airControl: 1.15 },
+    scale: {
+      ...NORMAL,
+      accel: 2,
+      friction: 1.7,
+      turnDecel: 2,
+      maxSpeed: 0.75,
+      jumpVelocity: 1.1,
+      gravity: 1.15,
+      airControl: 1.4,
+    },
   },
-  /** Thinnest and light: highest, longest jump and the best control in the air. */
+  /** Thinnest and light: floaty — highest, longest jump and the best control in the air. */
   erl: {
     id: "erl",
     name: "Ерл",
     color: "#9cc9e3",
     capsule: { halfHeight: 0.62, radius: 0.28 },
-    scale: { ...NORMAL, accel: 1.05, jumpVelocity: 1.08, gravity: 0.86, airControl: 1.5 },
+    scale: { ...NORMAL, accel: 1.1, maxSpeed: 1.05, gravity: 0.65, airControl: 1.6 },
   },
-  /** Widest and short-ish: slow to get going, hard to push around, strongest spin dash. */
+  /** Widest and short-ish: slowest to get going and to turn, hard to push around, by far the strongest spin dash. */
   emi: {
     id: "emi",
     name: "Емі",
@@ -79,12 +93,14 @@ export const heroes: Record<HeroId, HeroDef> = {
     capsule: { halfHeight: 0.3, radius: 0.5 },
     scale: {
       ...NORMAL,
-      accel: 0.72,
-      turnDecel: 0.85,
-      maxSpeed: 0.96,
-      jumpVelocity: 0.95,
-      spinBoost: 1.3,
-      knockback: 0.3,
+      accel: 0.5,
+      friction: 0.8,
+      turnDecel: 0.6,
+      maxSpeed: 0.95,
+      jumpVelocity: 0.92,
+      gravity: 1.1,
+      spinBoost: 1.6,
+      knockback: 0.2,
     },
   },
 };
@@ -107,6 +123,7 @@ export function heroTuning(id: HeroId): Tuning {
     move: {
       ...t.move,
       accel: t.move.accel * s.accel,
+      friction: t.move.friction * s.friction,
       turnDecel: t.move.turnDecel * s.turnDecel,
       maxSpeed: t.move.maxSpeed * s.maxSpeed,
     },

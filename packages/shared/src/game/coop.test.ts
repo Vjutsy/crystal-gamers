@@ -121,7 +121,7 @@ describe("shared checkpoints", () => {
   it("touching a checkpoint sets the respawn point for the whole team", () => {
     const cp: LevelObject = { kind: "checkpoint", pos: { x: 0, y: 0, z: 5 } };
     const { world, game } = setup([cp]);
-    play(world, game, () => ({ a: move(0, 1) }), 40);
+    play(world, game, () => ({ a: move(0, 1) }), 70);
     expect(game.checkpoint.z).toBeCloseTo(5, 3);
   });
 
