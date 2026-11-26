@@ -81,11 +81,13 @@ export class GameRoom extends Room<{ state: GameState }> {
   override onJoin(client: Client, options?: { name?: unknown }) {
     const used = new Set([...this.state.players.values()].map((p) => p.slot));
     const slot = [0, 1, 2, 3].find((s) => !used.has(s)) ?? 0;
-    addHero(this.world, this.game, client.sessionId, slot);
+    // Step 2 of SPEC-0003 lets players pick; until then the slot decides.
+    const hero = addHero(this.world, this.game, client.sessionId, slot);
     this.seats.set(client.sessionId, { queue: [], last: NO_INPUT, lastSeq: 0 });
     const p = new PlayerState();
     p.name = cleanName(options?.name, slot);
     p.slot = slot;
+    p.hero = hero.hero;
     p.connected = true;
     this.state.players.set(client.sessionId, p);
     this.writeHero(client.sessionId);

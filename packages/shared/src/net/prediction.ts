@@ -1,6 +1,7 @@
 import type { Vec3 } from "../math.ts";
 import { type MoverState, stepMover } from "../movement/mover.ts";
 import type { PhysicsWorld } from "../physics/world.ts";
+import { type Tuning, tuning } from "../tuning.ts";
 import type { InputMessage } from "./protocol.ts";
 
 /** Inputs the client has applied locally but the server has not confirmed yet. */
@@ -37,8 +38,9 @@ export function replayMover(
   pending: readonly InputMessage[],
   dt: number,
   respawn: Vec3,
+  t: Tuning = tuning,
 ): MoverState {
   let s = serverState;
-  for (const m of pending) s = stepMover(world, body, s, m.input, dt, respawn);
+  for (const m of pending) s = stepMover(world, body, s, m.input, dt, respawn, t);
   return s;
 }

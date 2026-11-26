@@ -31,6 +31,11 @@ export interface MoveResult {
  * The world itself is never stepped during play: a character move is a pure function of
  * (level, position, desired delta), which keeps it deterministic and easy to replay.
  */
+export interface CapsuleSize {
+  halfHeight: number;
+  radius: number;
+}
+
 export class PhysicsWorld {
   private world: RAPIER.World;
   private controller: RAPIER.KinematicCharacterController;
@@ -63,8 +68,8 @@ export class PhysicsWorld {
     this.controller.setApplyImpulsesToDynamicBodies(false);
   }
 
-  addCharacter(pos: Vec3): number {
-    const c = tuning.capsule;
+  /** Adds a character capsule (default size: the shared tuning; heroes pass their own body). */
+  addCharacter(pos: Vec3, c: CapsuleSize = tuning.capsule): number {
     const desc = RAPIER.ColliderDesc.capsule(c.halfHeight, c.radius)
       .setTranslation(pos.x, pos.y, pos.z)
       .setCollisionGroups(CHARACTER_GROUPS);
@@ -94,9 +99,8 @@ export class PhysicsWorld {
   }
 
   /** Surface normal directly under the character's feet, or null if nothing is within `reach`. */
-  groundNormal(id: number, pos: Vec3, reach: number): Vec3 | null {
+  groundNormal(id: number, pos: Vec3, reach: number, c: CapsuleSize = tuning.capsule): Vec3 | null {
     const col = this.mustGet(id);
-    const c = tuning.capsule;
     const feet = { x: pos.x, y: pos.y - c.halfHeight - c.radius + 0.05, z: pos.z };
     const ray = new RAPIER.Ray(feet, { x: 0, y: -1, z: 0 });
     const hit = this.world.castRayAndGetNormal(ray, reach + 0.05, true, undefined, CHARACTER_GROUPS, col);

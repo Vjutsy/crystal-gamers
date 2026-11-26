@@ -11,6 +11,8 @@ export const PlayerState = schema(
     name: t.string(),
     /** 0..3, decides the colour. */
     slot: t.uint8(),
+    /** HeroId: rubfir | nevetes | erl | emi (SPEC-0003). */
+    hero: t.string(),
     connected: t.boolean(),
     /** Last input seq the server has applied for this player. */
     lastSeq: t.uint32(),

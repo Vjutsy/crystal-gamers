@@ -1,7 +1,7 @@
 import type { InputFrame } from "../input.ts";
 import type { Vec3 } from "../math.ts";
 import type { PhysicsWorld } from "../physics/world.ts";
-import { tuning } from "../tuning.ts";
+import { type Tuning, tuning } from "../tuning.ts";
 import { touchObjects } from "./objects.ts";
 
 /** Everything needed to continue a character's movement. Plain data: easy to send, copy and replay. */
@@ -54,8 +54,9 @@ export function stepMover(
   input: InputFrame,
   dt: number,
   spawn: Vec3,
+  /** This hero's numbers (heroTuning); defaults to the shared tuning. */
+  t: Tuning = tuning,
 ): MoverState {
-  const t = tuning;
   let { x: vx, y: vy, z: vz } = s.vel;
   const control = s.grounded ? 1 : t.air.control;
 
@@ -120,7 +121,7 @@ export function stepMover(
   }
 
   // --- Slopes: a share of gravity pulls the hero downhill (uphill slows, downhill speeds up).
-  const ground = s.grounded ? world.groundNormal(id, s.pos, t.capsule.snapToGround) : null;
+  const ground = s.grounded ? world.groundNormal(id, s.pos, t.capsule.snapToGround, t.capsule) : null;
   if (ground && ground.y < 0.999) {
     const g = t.air.gravity * t.move.slopeFactor * ground.y;
     vx += g * ground.x * dt;
@@ -179,10 +180,26 @@ export function stepMover(
   if (grounded) vy = 0;
 
   const pos = { x: s.pos.x + res.delta.x, y: s.pos.y + res.delta.y, z: s.pos.z + res.delta.z };
+
+  // --- Never below the surface right under the centre. Rapier's snap-to-ground occasionally pulls
+  // an idle capsule into the floor (depends on its size and spot; it could even fall through).
+  // On slopes the real resting height is above this limit, so it only ever undoes sinking.
+  if (vy <= 0) {
+    const stand = t.capsule.halfHeight + t.capsule.radius;
+    const below = world.surfaceBelow(pos, stand + 0.5);
+    if (below !== null && pos.y - below > 0.01) {
+      const minY = below + stand + t.capsule.skin;
+      if (pos.y < minY) {
+        pos.y = minY;
+        vy = 0;
+        grounded = true;
+      }
+    }
+  }
   if (pos.y < t.world.killY) return createMover(spawn);
 
   // --- Springs and boosters.
-  const fx = touchObjects(world.objects, pos, { x: vx, y: vy, z: vz }, grounded);
+  const fx = touchObjects(world.objects, pos, { x: vx, y: vy, z: vz }, grounded, t);
   if (fx.vx !== undefined) vx = fx.vx;
   if (fx.vz !== undefined) vz = fx.vz;
   if (fx.vy !== undefined) vy = fx.vy;

@@ -1,19 +1,17 @@
 import type { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
 import type { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
-import { Color3 } from "@babylonjs/core/Maths/math.color";
 import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { Viewport } from "@babylonjs/core/Maths/math.viewport";
 import { CreateCapsule } from "@babylonjs/core/Meshes/Builders/capsuleBuilder";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { Scene } from "@babylonjs/core/scene";
-import { tuning, type Vec3 } from "@cg/shared";
+import { type HeroId, heroes, standHeight, tuning, type Vec3 } from "@cg/shared";
 import { makeMaterial } from "./level-view.ts";
 
-/** Colour per player slot (0..3). */
-export const heroColors = ["#2f6bff", "#ff8a1f", "#9b4dff", "#ff3b3b"];
-
-export const capsuleHeight = 2 * (tuning.capsule.halfHeight + tuning.capsule.radius);
-export const FEET = tuning.capsule.halfHeight + tuning.capsule.radius;
+/** Feet-to-centre distance of a hero's capsule. */
+export function heroFeet(hero: HeroId): number {
+  return standHeight({ capsule: heroes[hero].capsule });
+}
 
 /** Everything needed to draw one hero for one frame. */
 export interface HeroLook {
@@ -31,20 +29,21 @@ export class HeroView {
   readonly mesh: Mesh;
   private mat: StandardMaterial;
   private label: HTMLDivElement | null = null;
+  private readonly height: number;
+  private readonly radius: number;
 
   constructor(
     private scene: Scene,
     shadows: ShadowGenerator,
-    color: string,
+    readonly hero: HeroId,
   ) {
-    this.mesh = CreateCapsule("hero", { height: capsuleHeight, radius: tuning.capsule.radius }, scene);
-    this.mat = makeMaterial(scene, "hero", color);
+    const def = heroes[hero];
+    this.radius = def.capsule.radius;
+    this.height = 2 * heroFeet(hero);
+    this.mesh = CreateCapsule("hero", { height: this.height, radius: this.radius }, scene);
+    this.mat = makeMaterial(scene, `hero-${hero}`, def.color);
     this.mesh.material = this.mat;
     shadows.addShadowCaster(this.mesh);
-  }
-
-  setColor(hex: string) {
-    this.mat.diffuseColor = Color3.FromHexString(hex);
   }
 
   setName(name: string | null) {
@@ -71,7 +70,7 @@ export class HeroView {
     if (look.downed > 0) {
       m.scaling.set(1, 1, 1);
       m.rotation.z = Math.PI / 2;
-      m.position.y = pos.y - FEET + tuning.capsule.radius;
+      m.position.y = pos.y - this.height / 2 + this.radius;
       glow.set(0, 0, 0);
     } else if (look.spinCharge >= 0) {
       const lvl = Math.min(3, 1 + Math.floor(look.spinCharge / tuning.spinDash.levelTime));
@@ -85,14 +84,14 @@ export class HeroView {
       m.scaling.set(1, 1, 1);
       glow.set(0, 0, 0);
     }
-    if (look.downed <= 0) m.position.y -= ((1 - m.scaling.y) * capsuleHeight) / 2;
+    if (look.downed <= 0) m.position.y -= ((1 - m.scaling.y) * this.height) / 2;
     m.visibility = look.invuln > 0 && Math.floor(performance.now() / 90) % 2 === 0 ? 0.25 : 1;
   }
 
   /** Places the nickname above the head in screen space (CSS pixels). */
   placeLabel(canvas: HTMLCanvasElement) {
     if (!this.label) return;
-    const head = this.mesh.position.add(new Vector3(0, capsuleHeight / 2 + 0.35, 0));
+    const head = this.mesh.position.add(new Vector3(0, this.height / 2 + 0.35, 0));
     const p = Vector3.Project(
       head,
       Matrix.IdentityReadOnly,
