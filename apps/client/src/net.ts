@@ -117,7 +117,7 @@ function makeDelayer() {
 export type JoinRequest = { mode: "create" } | { mode: "join"; code: string };
 
 /** Why joining failed, for a human-readable message in the lobby. */
-export type JoinError = "not-found" | "full" | "unreachable";
+export type JoinError = "not-found" | "full" | "unreachable" | "hero-taken";
 
 export class JoinFailed extends Error {
   constructor(readonly reason: JoinError) {
@@ -130,7 +130,7 @@ export class JoinFailed extends Error {
  * answers; calls `onSlow` once if that takes longer than a moment. Resolves false on timeout.
  */
 export async function wakeServer(url: string, onSlow: () => void, timeoutMs = 90_000): Promise<boolean> {
-  const health = `${url.replace(/^ws/, "http").replace(/\/$/, "")}/health`;
+  const health = `${httpBase(url)}/health`;
   const t0 = performance.now();
   const slowTimer = setTimeout(onSlow, 1500);
   try {
@@ -150,9 +150,9 @@ export async function wakeServer(url: string, onSlow: () => void, timeoutMs = 90
 }
 
 /** Creates a room or joins one by code. Throws JoinFailed. */
-export async function connect(url: string, req: JoinRequest, name: string): Promise<Net> {
+export async function connect(url: string, req: JoinRequest, name: string, hero: HeroId): Promise<Net> {
   const client = new Client(url);
-  const opts = { name };
+  const opts = { name, hero };
   try {
     return wrap(
       await withTimeout(
@@ -162,10 +162,26 @@ export async function connect(url: string, req: JoinRequest, name: string): Prom
     );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
+    if (/hero-taken/i.test(msg)) throw new JoinFailed("hero-taken");
     if (/not found/i.test(msg)) throw new JoinFailed("not-found");
     if (/locked|full|maxClients/i.test(msg)) throw new JoinFailed("full");
     throw new JoinFailed("unreachable");
   }
+}
+
+/** What the lobby needs to know about a room before joining it (GET /room/:code). */
+export async function roomInfo(
+  url: string,
+  code: string,
+): Promise<{ exists: false } | { exists: true; full: boolean; taken: { hero: string; name: string }[] }> {
+  const res = await withTimeout(fetch(`${httpBase(url)}/room/${code}`, { cache: "no-store" }), 10_000);
+  if (res.status === 404) return { exists: false };
+  if (!res.ok) throw new JoinFailed("unreachable");
+  return await res.json();
+}
+
+function httpBase(url: string): string {
+  return url.replace(/^ws/, "http").replace(/\/$/, "");
 }
 
 /** Takes back our own seat (same hero, colour and crystals) after a reload or a closed tab. */

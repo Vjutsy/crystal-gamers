@@ -3,10 +3,14 @@ import {
   createGame,
   type GameState as Game,
   generateRoomCode,
+  HERO_IDS,
+  type HeroId,
   type HeroState,
+  heroForSlot,
   type InputFrame,
   type InputMessage,
   initPhysics,
+  isHeroId,
   MAX_PLAYERS,
   NO_INPUT,
   PATCH_HZ,
@@ -17,7 +21,7 @@ import {
   stepGame,
   testLevel,
 } from "@cg/shared";
-import { type Client, Room } from "@colyseus/core";
+import { type Client, Room, ServerError } from "@colyseus/core";
 import { GameState, PlayerState, ScatteredState } from "./schema.ts";
 import { tickStats } from "./tick-stats.ts";
 
@@ -78,11 +82,21 @@ export class GameRoom extends Room<{ state: GameState }> {
     this.setSimulationInterval(() => this.tick(), SIM_DT * 1000);
   }
 
-  override onJoin(client: Client, options?: { name?: unknown }) {
-    const used = new Set([...this.state.players.values()].map((p) => p.slot));
-    const slot = [0, 1, 2, 3].find((s) => !used.has(s)) ?? 0;
-    // Step 2 of SPEC-0003 lets players pick; until then the slot decides.
-    const hero = addHero(this.world, this.game, client.sessionId, slot);
+  override onJoin(client: Client, options?: { name?: unknown; hero?: unknown }) {
+    const players = [...this.state.players.values()];
+    const usedSlots = new Set(players.map((p) => p.slot));
+    const takenHeroes = new Set(players.map((p) => p.hero));
+    const slot = [0, 1, 2, 3].find((s) => !usedSlots.has(s)) ?? 0;
+    // One of each hero per room (SPEC-0003). A taken pick is refused, so the lobby can ask again;
+    // no pick (old clients, tests) gets the first free hero.
+    let heroId: HeroId;
+    if (isHeroId(options?.hero)) {
+      if (takenHeroes.has(options.hero)) throw new ServerError(4009, "hero-taken");
+      heroId = options.hero;
+    } else {
+      heroId = HERO_IDS.find((h) => !takenHeroes.has(h)) ?? heroForSlot(slot);
+    }
+    const hero = addHero(this.world, this.game, client.sessionId, slot, heroId);
     this.seats.set(client.sessionId, { queue: [], last: NO_INPUT, lastSeq: 0 });
     const p = new PlayerState();
     p.name = cleanName(options?.name, slot);
@@ -91,6 +105,13 @@ export class GameRoom extends Room<{ state: GameState }> {
     p.connected = true;
     this.state.players.set(client.sessionId, p);
     this.writeHero(client.sessionId);
+    this.publishTaken();
+  }
+
+  /** Lets the lobby show who has which hero before joining (GET /room/:code). */
+  private publishTaken() {
+    const taken = [...this.state.players.values()].map((p) => ({ hero: p.hero, name: p.name }));
+    void this.setMatchmaking({ metadata: { taken } });
   }
 
   override async onDrop(client: Client) {
@@ -113,6 +134,7 @@ export class GameRoom extends Room<{ state: GameState }> {
     removeHero(this.world, this.game, client.sessionId);
     this.seats.delete(client.sessionId);
     this.state.players.delete(client.sessionId);
+    this.publishTaken();
   }
 
   override onDispose() {

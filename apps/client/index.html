@@ -54,6 +54,8 @@
         display: grid;
         place-items: center;
         background: rgba(20, 30, 60, 0.55);
+        /* above the ?debug panel */
+        z-index: 2000;
       }
       #lobby .card {
         width: min(340px, 90vw);
@@ -65,6 +67,69 @@
         background: #1d2333;
         color: #fff;
         box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+      }
+      #lobby [hidden] {
+        display: none;
+      }
+      #lobby .card.wide {
+        width: min(760px, 94vw);
+      }
+      #lobby h2 {
+        margin: 0;
+        font-size: 20px;
+        text-align: center;
+      }
+      #lobby .heroes {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 10px;
+      }
+      #lobby button.hero {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+        padding: 12px 8px;
+        background: #111622;
+        color: #fff;
+        border: 2px solid #3a4560;
+        border-top: 6px solid var(--hero);
+        font-weight: 400;
+      }
+      #lobby button.hero.chosen {
+        border-color: var(--hero);
+        box-shadow: 0 0 0 2px var(--hero);
+      }
+      #lobby button.hero.taken {
+        filter: grayscale(1);
+        opacity: 0.45;
+      }
+      #lobby .hero strong {
+        font-size: 17px;
+      }
+      #lobby .hero small {
+        font-size: 12px;
+      }
+      #lobby .silhouette {
+        width: 60px;
+        height: 100px;
+      }
+      #lobby .hero dl {
+        display: grid;
+        grid-template-columns: auto auto;
+        gap: 2px 8px;
+        margin: 0;
+        font-size: 12px;
+        text-align: left;
+      }
+      #lobby .hero dt {
+        opacity: 0.75;
+      }
+      #lobby .hero dd {
+        margin: 0;
+        color: var(--hero);
+        letter-spacing: 1px;
+        filter: brightness(1.4);
       }
       #lobby h1 {
         margin: 0 0 6px;

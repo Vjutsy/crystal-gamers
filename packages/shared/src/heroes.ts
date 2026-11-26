@@ -156,3 +156,15 @@ export function heroTuning(id: HeroId): Tuning {
 export function standHeight(t: { capsule: { halfHeight: number; radius: number } }): number {
   return t.capsule.halfHeight + t.capsule.radius;
 }
+
+/** Numbers for the lobby's stat bars (bigger = better at it). */
+export function heroStats(id: HeroId) {
+  const t = heroTuning(id);
+  return {
+    speed: t.move.maxSpeed,
+    accel: t.move.accel,
+    jump: (t.jump.velocity * t.jump.velocity) / (2 * t.air.gravity),
+    stability: 1 / t.hazards.knockback,
+  };
+}
+export type HeroStat = keyof ReturnType<typeof heroStats>;
