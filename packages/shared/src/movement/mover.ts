@@ -23,6 +23,14 @@ export interface MoverState {
   spinCharge: number;
   /** True after a spin dash until the hero slows back to normal running speed. */
   rolling: boolean;
+  /** The hero's air trick (double jump, dash or slam) was used since leaving the ground. */
+  airUsed: boolean;
+  /** Rubfir is slamming down. */
+  pounding: boolean;
+  /** True on the tick a slam hits the ground (the game turns it into a shock wave). */
+  pounded: boolean;
+  /** Seconds of Erl's air dash left (0 = not dashing). */
+  dash: number;
 }
 
 export function createMover(spawn: Vec3): MoverState {
@@ -37,6 +45,10 @@ export function createMover(spawn: Vec3): MoverState {
     facing: { x: 0, z: 1 },
     spinCharge: -1,
     rolling: false,
+    airUsed: false,
+    pounding: false,
+    pounded: false,
+    dash: 0,
   };
 }
 
@@ -64,7 +76,8 @@ export function stepMover(
   const inLen = Math.hypot(input.moveX, input.moveZ);
   const strength = Math.min(inLen, 1);
   let facing = s.facing;
-  if (strength > 0) facing = { x: input.moveX / inLen, z: input.moveZ / inLen };
+  // Direction is locked during an air dash.
+  if (strength > 0 && s.dash <= 0) facing = { x: input.moveX / inLen, z: input.moveZ / inLen };
   let rolling = s.rolling;
   let spinCharge = s.spinCharge;
   const jumpPressed = input.jump && !s.jumpHeld;
@@ -147,6 +160,37 @@ export function stepMover(
     vy = Math.max(-t.air.maxFall, vy - t.air.gravity * dt);
   }
 
+  // --- Air trick: a new jump press in the air (after coyote time), once per airtime.
+  let airUsed = s.airUsed;
+  let pounding = s.pounding;
+  let dash = Math.max(0, s.dash - dt);
+  const kind = t.tricks.kind;
+  const usesAirPress = kind === "pound" || kind === "doubleJump" || kind === "airDash";
+  if (pressed && !s.grounded && coyote <= 0 && jumpBuffer > 0 && !airUsed && usesAirPress) {
+    airUsed = true;
+    jumpBuffer = 0;
+    rolling = false;
+    if (kind === "doubleJump") {
+      vy = t.jump.velocity * t.tricks.doubleJump;
+      jumpCuttable = true;
+    } else if (kind === "pound") {
+      pounding = true;
+      jumpCuttable = false;
+    } else if (kind === "airDash") {
+      dash = t.tricks.dashTime;
+      jumpCuttable = false;
+    }
+  }
+  if (pounding) {
+    vx = 0;
+    vz = 0;
+    vy = -t.tricks.poundSpeed;
+  } else if (dash > 0) {
+    vx = facing.x * t.tricks.dashSpeed;
+    vz = facing.z * t.tricks.dashSpeed;
+    vy = 0;
+  }
+
   // Releasing the button while rising cuts the jump short (variable height).
   if (jumpCuttable && !input.jump && vy > 0) {
     vy *= t.jump.releaseCut;
@@ -180,6 +224,7 @@ export function stepMover(
   if (grounded) vy = 0;
 
   const pos = { x: s.pos.x + res.delta.x, y: s.pos.y + res.delta.y, z: s.pos.z + res.delta.z };
+  let pounded = false;
 
   // --- Never below the surface right under the centre. Rapier's snap-to-ground occasionally pulls
   // an idle capsule into the floor (depends on its size and spot; it could even fall through).
@@ -212,6 +257,14 @@ export function stepMover(
 
   if (rolling && Math.hypot(vx, vz) <= t.move.maxSpeed) rolling = false;
 
+  // Landing (or bouncing off a spring) ends the trick and makes it ready again.
+  if (grounded || fx.launched) {
+    if (pounding && grounded) pounded = true;
+    pounding = false;
+    airUsed = false;
+    dash = 0;
+  }
+
   return {
     pos,
     vel: { x: vx, y: vy, z: vz },
@@ -223,5 +276,9 @@ export function stepMover(
     facing,
     spinCharge,
     rolling,
+    airUsed,
+    pounding,
+    pounded,
+    dash,
   };
 }

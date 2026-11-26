@@ -180,6 +180,10 @@ export class GameRoom extends Room<{ state: GameState }> {
     p.facingZ = m.facing.z;
     p.spinCharge = m.spinCharge;
     p.rolling = m.rolling;
+    p.airUsed = m.airUsed;
+    p.pounding = m.pounding;
+    p.pounded = m.pounded;
+    p.dash = m.dash;
     p.crystals = h.crystals;
     p.invuln = h.invuln;
     p.downed = h.downed;

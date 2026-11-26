@@ -137,3 +137,24 @@ describe("shared checkpoints", () => {
     expect(c?.mover.pos.z).toBeGreaterThan(20);
   });
 });
+
+describe("Rubfir's slam", () => {
+  it("bounces teammates standing near the landing, not those far away", () => {
+    // Slots: a = Rubfir at x 0, b = Nevetes at x 1.5, c = Erl at x 3, d = Emi at x 4.5.
+    const { world, game } = setup([], ["a", "b", "c", "d"]);
+    play(world, game, () => ({}), 30);
+    let bounced = { b: 0, d: 0 };
+    let slammed = false;
+    for (let i = 0; i < 120; i++) {
+      const events = stepGame(world, game, { a: press({ jump: i < 10 || (i >= 16 && i < 20) }) }, SIM_DT);
+      if (events.some((e) => e.type === "pound" && e.hero === "a")) slammed = true;
+      bounced = {
+        b: Math.max(bounced.b, game.heroes.b?.mover.vel.y ?? 0),
+        d: Math.max(bounced.d, game.heroes.d?.mover.vel.y ?? 0),
+      };
+    }
+    expect(slammed).toBe(true);
+    expect(bounced.b).toBeGreaterThan(5); // 1.5 m away
+    expect(bounced.d).toBe(0); // 4.5 m away
+  });
+});

@@ -87,6 +87,10 @@ function toSnapshot(state: any): Snapshot {
         facing: { x: p.facingX, z: p.facingZ },
         spinCharge: p.spinCharge,
         rolling: p.rolling,
+        airUsed: p.airUsed ?? false,
+        pounding: p.pounding ?? false,
+        pounded: p.pounded ?? false,
+        dash: p.dash ?? 0,
       },
     });
   });

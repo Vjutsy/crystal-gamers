@@ -53,7 +53,8 @@ export type GameEvent =
   | { type: "respawn"; hero: string }
   | { type: "revive"; hero: string; by: string }
   | { type: "pulled"; hero: string }
-  | { type: "checkpoint"; hero: string };
+  | { type: "checkpoint"; hero: string }
+  | { type: "pound"; hero: string };
 
 /** Capsule centre for a hero standing with its feet at `feet`. */
 export function centerAt(feet: Vec3, t: Tuning): Vec3 {
@@ -213,6 +214,23 @@ export function stepGame(
       events.push({ type: "respawn", hero: id });
     }
     const f = feet(h.mover.pos, t);
+
+    // Rubfir's slam: teammates standing near the landing are thrown up.
+    if (h.mover.pounded) {
+      events.push({ type: "pound", hero: id });
+      for (const otherId of Object.keys(game.heroes).sort()) {
+        const o = game.heroes[otherId];
+        if (!o || otherId === id || o.downed > 0 || !o.mover.grounded) continue;
+        if (near(o.mover.pos, h.mover.pos, t.tricks.poundRadius)) {
+          o.mover = {
+            ...o.mover,
+            vel: { ...o.mover.vel, y: t.tricks.poundBounce },
+            grounded: false,
+            coyote: 0,
+          };
+        }
+      }
+    }
 
     for (const o of world.objects) {
       if (o.kind === "checkpoint" && atCheckpoint(f, o)) {

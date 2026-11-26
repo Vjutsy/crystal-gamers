@@ -89,7 +89,9 @@ export function pickHero(container: HTMLElement, taken: Taken[], message = ""): 
         dd.textContent = "●".repeat(dots(id, s)) + "○".repeat(5 - dots(id, s));
         stats.append(dt, dd);
       }
-      card.append(silhouette(id), name, stats);
+      const trick = document.createElement("em");
+      trick.textContent = tr.picker.tricks[heroes[id].trick];
+      card.append(silhouette(id), name, trick, stats);
       const by = takenBy.get(id);
       if (by !== undefined) {
         card.disabled = true;
