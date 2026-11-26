@@ -1,3 +1,6 @@
+/** none | pound (Rubfir) | doubleJump (Nevetes) | airDash (Erl) | ramSpin (Emi, used by breakables) */
+export type TrickKind = "none" | "pound" | "doubleJump" | "airDash" | "ramSpin";
+
 /**
  * All gameplay numbers live here, not in logic code.
  * Units: metres, seconds, degrees. The ?debug panel edits these live (SPEC-0001 step 3).
@@ -62,6 +65,22 @@ export const tuning = {
     chargeBrake: 60,
     /** m/s² slowdown of a rolling hero with no input (gentler than friction, so dashes carry) */
     rollDecel: 6,
+  },
+  /** Hero movement tricks (SPEC-0003): a second jump press in the air, or Emi's ramming spin. */
+  tricks: {
+    /** Which trick this body has; set per hero by heroTuning. */
+    kind: "none" as TrickKind,
+    /** Nevetes: second jump, share of the normal jump speed */
+    doubleJump: 0.85,
+    /** Rubfir: m/s straight down while slamming */
+    poundSpeed: 30,
+    /** Rubfir: m/s upward given to teammates standing near the landing */
+    poundBounce: 9,
+    /** Rubfir: m reach of the landing shock */
+    poundRadius: 3,
+    /** Erl: m/s of the air dash and how long it lasts, s (no falling meanwhile) */
+    dashSpeed: 16,
+    dashTime: 0.2,
   },
   objects: {
     /** Horizontal reach of a spring, m (added to the capsule radius) */

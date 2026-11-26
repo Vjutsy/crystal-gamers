@@ -4,7 +4,7 @@ import { netSim } from "./net.ts";
 const STORAGE_KEY = "cg-tuning-v1";
 
 /** Groups that are safe to edit live (capsule settings need a physics rebuild, so they are excluded). */
-const LIVE_GROUPS = ["move", "air", "jump", "spinDash"] as const;
+const LIVE_GROUPS = ["move", "air", "jump", "spinDash", "tricks"] as const;
 type LiveGroup = (typeof LIVE_GROUPS)[number];
 
 /** Sensible slider ranges per field; anything missing gets an automatic range. */
@@ -24,6 +24,12 @@ const RANGES: Record<string, [number, number, number]> = {
   "jump.coyoteTime": [0, 0.3, 0.01],
   "jump.bufferTime": [0, 0.3, 0.01],
   "spinDash.levelTime": [0.1, 1, 0.05],
+  "tricks.doubleJump": [0.3, 1.5, 0.05],
+  "tricks.poundSpeed": [10, 60, 1],
+  "tricks.poundBounce": [0, 20, 0.5],
+  "tricks.poundRadius": [1, 8, 0.25],
+  "tricks.dashSpeed": [5, 40, 0.5],
+  "tricks.dashTime": [0.05, 0.6, 0.01],
   "spinDash.boost1": [0, 20, 0.5],
   "spinDash.boost2": [0, 25, 0.5],
   "spinDash.boost3": [0, 30, 0.5],
@@ -34,7 +40,7 @@ const RANGES: Record<string, [number, number, number]> = {
 type Numbers = Record<string, number>;
 
 function liveValues(): Record<LiveGroup, Numbers> {
-  return Object.fromEntries(LIVE_GROUPS.map((g) => [g, { ...(tuning[g] as Numbers) }])) as Record<
+  return Object.fromEntries(LIVE_GROUPS.map((g) => [g, { ...(tuning[g] as unknown as Numbers) }])) as Record<
     LiveGroup,
     Numbers
   >;
@@ -81,8 +87,9 @@ export async function maybeShowDebugPanel() {
   const controllers: { updateDisplay(): void }[] = [];
   for (const g of LIVE_GROUPS) {
     const folder = gui.addFolder(g);
-    const obj = tuning[g] as Numbers;
+    const obj = tuning[g] as unknown as Numbers;
     for (const key of Object.keys(obj)) {
+      if (typeof obj[key] !== "number") continue; // e.g. tricks.kind is set per hero
       const r = RANGES[`${g}.${key}`];
       const c = r ? folder.add(obj, key, r[0], r[1], r[2]) : folder.add(obj, key);
       c.onChange(save);

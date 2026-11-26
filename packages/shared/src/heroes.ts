@@ -1,4 +1,4 @@
-import { type Tuning, tuning } from "./tuning.ts";
+import { type TrickKind, type Tuning, tuning } from "./tuning.ts";
 
 /** The four heroes (SPEC-0003). One of each per room. */
 export const HERO_IDS = ["rubfir", "nevetes", "erl", "emi"] as const;
@@ -16,6 +16,8 @@ export interface HeroDef {
    * thinner than ~0.36 m (Erl got stuck on stairs), so a thin hero gets a wider body than it looks.
    */
   lookRadius?: number;
+  /** Movement trick: second jump press in the air (pound, doubleJump, airDash) or ramSpin. */
+  trick: TrickKind;
   /**
    * How this hero's body changes the shared movement numbers: multipliers on `tuning`,
    * so the ?debug panel still tunes everyone together.
@@ -52,6 +54,7 @@ export const heroes: Record<HeroId, HeroDef> = {
     id: "rubfir",
     name: "Рубфір",
     color: "#7d2335",
+    trick: "pound",
     capsule: { halfHeight: 0.75, radius: 0.45 },
     scale: {
       ...NORMAL,
@@ -70,6 +73,7 @@ export const heroes: Record<HeroId, HeroDef> = {
     id: "nevetes",
     name: "Неветес",
     color: "#e58fb8",
+    trick: "doubleJump",
     capsule: { halfHeight: 0.22, radius: 0.36 },
     scale: {
       ...NORMAL,
@@ -87,6 +91,7 @@ export const heroes: Record<HeroId, HeroDef> = {
     id: "erl",
     name: "Ерл",
     color: "#9cc9e3",
+    trick: "airDash",
     capsule: { halfHeight: 0.54, radius: 0.36 },
     lookRadius: 0.28,
     scale: { ...NORMAL, accel: 1.1, maxSpeed: 1.05, gravity: 0.65, airControl: 1.6 },
@@ -96,6 +101,7 @@ export const heroes: Record<HeroId, HeroDef> = {
     id: "emi",
     name: "Емі",
     color: "#8a5cc7",
+    trick: "ramSpin",
     capsule: { halfHeight: 0.3, radius: 0.5 },
     scale: {
       ...NORMAL,
@@ -144,6 +150,7 @@ export function heroTuning(id: HeroId): Tuning {
       boost2: t.spinDash.boost2 * s.spinBoost,
       boost3: t.spinDash.boost3 * s.spinBoost,
     },
+    tricks: { ...t.tricks, kind: h.trick },
     hazards: {
       ...t.hazards,
       knockback: t.hazards.knockback * s.knockback,

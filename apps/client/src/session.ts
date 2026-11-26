@@ -228,6 +228,8 @@ export class NetSession implements Session {
         pos: { x: pos.x + o.x, y: pos.y + o.y, z: pos.z + o.z },
         spinCharge: pred?.spinCharge ?? -1,
         rolling: pred?.rolling ?? false,
+        pounding: pred?.pounding ?? false,
+        dash: pred?.dash ?? 0,
         downed: me?.downed ?? 0,
         invuln: me?.invuln ?? 0,
       },
