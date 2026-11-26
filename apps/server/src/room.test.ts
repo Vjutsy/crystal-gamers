@@ -52,6 +52,36 @@ describe("game server", () => {
     for (const r of [host, ...guests]) await r.leave();
   });
 
+  it("lets each player pick a hero, refuses a taken one, and reports taken heroes per room", async () => {
+    const host = await new Client(URL).create(GAME_ROOM, { name: "Аня", hero: "erl" });
+    await waitFor(() => me(host)?.hero === "erl");
+    await expect(new Client(URL).joinById(host.roomId, { name: "Bo", hero: "erl" })).rejects.toThrow(
+      /hero-taken/,
+    );
+    const guest = await new Client(URL).joinById(host.roomId, { name: "Bo", hero: "emi" });
+    await waitFor(() => me(guest)?.hero === "emi");
+
+    const info = (await (
+      await fetch(`http://localhost:${PORT}/room/${host.roomId.toLowerCase()}`)
+    ).json()) as {
+      exists: boolean;
+      taken: unknown[];
+    };
+    expect(info.exists).toBe(true);
+    expect(info.taken).toEqual(
+      expect.arrayContaining([
+        { hero: "erl", name: "Аня" },
+        { hero: "emi", name: "Bo" },
+      ]),
+    );
+    expect((await fetch(`http://localhost:${PORT}/room/ZZZZ`)).status).toBe(404);
+
+    // No pick: first free hero.
+    const third = await new Client(URL).joinById(host.roomId, {});
+    await waitFor(() => me(third)?.hero === "rubfir");
+    for (const r of [host, guest, third]) await r.leave();
+  });
+
   it("applies numbered inputs, moves the hero and reports lastSeq", async () => {
     const room = await new Client(URL).create(GAME_ROOM, { name: "Runner" });
     await waitFor(() => me(room) !== undefined);

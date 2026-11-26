@@ -21,7 +21,15 @@ const dict = {
         "not-found": "Такої кімнати немає. Перевір код або створи нову.",
         full: "Кімната заповнена (максимум 4 гравці).",
         unreachable: "Не вдалося достукатися до сервера. Спробуй ще раз або грай соло.",
+        "hero-taken": "Цього героя щойно взяв хтось інший — обери іншого.",
       },
+    },
+    picker: {
+      title: "Обери героя",
+      play: "Грати",
+      back: "Назад",
+      takenBy: (name: string) => `зайнято: ${name}`,
+      stats: { speed: "Швидкість", accel: "Розгін", jump: "Стрибок", stability: "Стійкість" },
     },
   },
   en: {
@@ -46,7 +54,15 @@ const dict = {
         "not-found": "No such room. Check the code or create a new one.",
         full: "The room is full (4 players max).",
         unreachable: "Could not reach the server. Try again or play solo.",
+        "hero-taken": "Someone just took this hero — pick another one.",
       },
+    },
+    picker: {
+      title: "Choose your hero",
+      play: "Play",
+      back: "Back",
+      takenBy: (name: string) => `taken: ${name}`,
+      stats: { speed: "Speed", accel: "Acceleration", jump: "Jump", stability: "Stability" },
     },
   },
 };

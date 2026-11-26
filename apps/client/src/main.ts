@@ -107,10 +107,10 @@ function localHeroView(hero: HeroId): HeroView {
   return view;
 }
 
-/** Solo hero: ?hero=rubfir|nevetes|erl|emi (the lobby picker comes in SPEC-0003 step 2). */
-function soloHero(): HeroId {
+/** Solo hero: the lobby's pick, unless ?hero=… overrides it (the ?debug switch uses that). */
+function soloHero(picked: HeroId): HeroId {
   const h = new URLSearchParams(location.search).get("hero");
-  return isHeroId(h) ? h : "rubfir";
+  return isHeroId(h) ? h : picked;
 }
 
 // Blob shadow: in an isometric view it is the main cue for how high the hero is.
@@ -135,7 +135,9 @@ async function start() {
 
   const choice = await runLobby();
   const net = choice.kind === "online" ? choice.net : null;
-  const session: Session = net ? new NetSession(world, net) : new SoloSession(world, level, soloHero());
+  const session: Session = net
+    ? new NetSession(world, net)
+    : new SoloSession(world, level, soloHero(choice.kind === "solo" ? choice.hero : "rubfir"));
   if (net) showInvite(net.roomId);
   else $("status").textContent = tr.solo;
   canvas.focus();
