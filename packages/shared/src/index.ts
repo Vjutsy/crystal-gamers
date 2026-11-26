@@ -1,6 +1,7 @@
 export * from "./constants.ts";
 export * from "./crystals.ts";
 export * from "./game/game.ts";
+export * from "./heroes.ts";
 export * from "./input.ts";
 export * from "./level/orient.ts";
 export * from "./level/test-level.ts";

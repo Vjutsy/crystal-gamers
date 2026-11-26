@@ -1,4 +1,12 @@
-import { DEFAULT_SERVER_PORT, GAME_ROOM, type InputFrame, type MoverState, type Vec3 } from "@cg/shared";
+import {
+  DEFAULT_SERVER_PORT,
+  GAME_ROOM,
+  type HeroId,
+  type InputFrame,
+  isHeroId,
+  type MoverState,
+  type Vec3,
+} from "@cg/shared";
 import { Client, type Room } from "@colyseus/sdk";
 
 /** Bad-network simulator (?lag=150&jitter=30&loss=2 in the URL, or the ?debug panel). Applied each way. */
@@ -14,6 +22,7 @@ export const netSim = {
 export interface PlayerSnap {
   name: string;
   slot: number;
+  hero: HeroId;
   connected: boolean;
   lastSeq: number;
   mover: MoverState;
@@ -61,6 +70,7 @@ function toSnapshot(state: any): Snapshot {
     players.set(id, {
       name: p.name,
       slot: p.slot,
+      hero: isHeroId(p.hero) ? p.hero : "rubfir",
       connected: p.connected,
       lastSeq: p.lastSeq,
       crystals: p.crystals,

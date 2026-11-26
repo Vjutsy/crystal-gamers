@@ -1,13 +1,16 @@
 import type { Crystal } from "../crystals.ts";
+import { HERO_IDS, type HeroId, heroTuning, standHeight } from "../heroes.ts";
 import type { InputFrame } from "../input.ts";
 import type { Checkpoint, Level, Spikes } from "../level/types.ts";
 import type { Vec3 } from "../math.ts";
 import { createMover, type MoverState, stepMover } from "../movement/mover.ts";
 import type { PhysicsWorld } from "../physics/world.ts";
-import { tuning } from "../tuning.ts";
+import { type Tuning, tuning } from "../tuning.ts";
 
 /** One player's hero: movement plus everything the game rules track about it. */
 export interface HeroState {
+  /** Which of the four heroes this is (body, movement, weapon). */
+  hero: HeroId;
   /** Physics body id in the PhysicsWorld. */
   body: number;
   mover: MoverState;
@@ -37,8 +40,9 @@ export interface GameState {
   crystals: Crystal[];
   scattered: Scattered[];
   nextScatterId: number;
+  /** Level start, at feet level (heroes differ in height, so points are kept at the feet). */
   spawn: Vec3;
-  /** Shared respawn point of the whole team (last checkpoint anyone touched). */
+  /** Shared respawn point of the whole team (last checkpoint anyone touched), at feet level. */
   checkpoint: Vec3;
 }
 
@@ -51,28 +55,51 @@ export type GameEvent =
   | { type: "pulled"; hero: string }
   | { type: "checkpoint"; hero: string };
 
-const STAND = tuning.capsule.halfHeight + tuning.capsule.radius;
+/** Capsule centre for a hero standing with its feet at `feet`. */
+export function centerAt(feet: Vec3, t: Tuning): Vec3 {
+  return { x: feet.x, y: feet.y + standHeight(t), z: feet.z };
+}
 
-export function createGame(world: PhysicsWorld, level: Level, heroIds: string[]): GameState {
+/** Default hero for a slot when none was chosen (tests, solo). */
+export function heroForSlot(slot: number): HeroId {
+  return HERO_IDS[slot % HERO_IDS.length] ?? "rubfir";
+}
+
+export function createGame(
+  world: PhysicsWorld,
+  level: Level,
+  playerIds: string[],
+  heroIds: HeroId[] = [],
+): GameState {
+  // Level spawns are authored for the default capsule; keep the feet point.
+  const spawnFeet = { ...level.spawn, y: level.spawn.y - standHeight(tuning) };
   const game: GameState = {
     heroes: {},
     crystals: (level.crystals ?? []).map((pos, id) => ({ id, pos: { ...pos }, taken: false })),
     scattered: [],
     nextScatterId: 1,
-    spawn: { ...level.spawn },
-    checkpoint: { ...level.spawn },
+    spawn: spawnFeet,
+    checkpoint: { ...spawnFeet },
   };
-  heroIds.forEach((id, i) => {
-    addHero(world, game, id, i);
+  playerIds.forEach((id, i) => {
+    addHero(world, game, id, i, heroIds[i] ?? heroForSlot(i));
   });
   return game;
 }
 
 /** Adds a hero next to the level start (players spread 1.5 m apart). */
-export function addHero(world: PhysicsWorld, game: GameState, id: string, slot = 0): HeroState {
-  const spawn = { ...game.spawn, x: game.spawn.x + slot * 1.5 };
+export function addHero(
+  world: PhysicsWorld,
+  game: GameState,
+  id: string,
+  slot = 0,
+  heroId: HeroId = heroForSlot(slot),
+): HeroState {
+  const t = heroTuning(heroId);
+  const spawn = centerAt({ ...game.spawn, x: game.spawn.x + slot * 1.5 }, t);
   const hero: HeroState = {
-    body: world.addCharacter(spawn),
+    hero: heroId,
+    body: world.addCharacter(spawn, t.capsule),
     mover: createMover(spawn),
     crystals: 0,
     invuln: 0,
@@ -89,8 +116,8 @@ export function removeHero(world: PhysicsWorld, game: GameState, id: string) {
   delete game.heroes[id];
 }
 
-function feet(pos: Vec3): Vec3 {
-  return { x: pos.x, y: pos.y - STAND, z: pos.z };
+function feet(pos: Vec3, t: Tuning): Vec3 {
+  return { x: pos.x, y: pos.y - standHeight(t), z: pos.z };
 }
 
 function onSpikes(f: Vec3, s: Spikes): boolean {
@@ -149,7 +176,7 @@ function pullStragglers(game: GameState, activator: string, events: GameEvent[])
     const h = game.heroes[id];
     if (!h || id === activator || h.downed > 0) continue;
     if (!near(h.mover.pos, game.checkpoint, tuning.coop.pullDistance)) {
-      h.mover = createMover(slotNear(game.checkpoint, slot++));
+      h.mover = createMover(centerAt(slotNear(game.checkpoint, slot++), heroTuning(h.hero)));
       events.push({ type: "pulled", hero: id });
     }
   }
@@ -166,11 +193,10 @@ export function stepGame(
   dt: number,
 ): GameEvent[] {
   const events: GameEvent[] = [];
-  const t = tuning;
-
   for (const id of Object.keys(game.heroes).sort()) {
     const h = game.heroes[id];
     if (!h) continue;
+    const t = heroTuning(h.hero);
 
     if (h.downed > 0) {
       // Lies still; the timer only matters when the whole team is down (see below).
@@ -182,15 +208,15 @@ export function stepGame(
     h.invuln = Math.max(0, h.invuln - dt);
     const input = inputs[id];
     const before = h.mover;
-    h.mover = stepMover(world, h.body, h.mover, input ?? NO_MOVE, dt, game.checkpoint);
+    h.mover = stepMover(world, h.body, h.mover, input ?? NO_MOVE, dt, centerAt(game.checkpoint, t), t);
     if (before.pos.y < t.world.killY + 5 && h.mover.pos.y > before.pos.y + 5) {
       events.push({ type: "respawn", hero: id });
     }
-    const f = feet(h.mover.pos);
+    const f = feet(h.mover.pos, t);
 
     for (const o of world.objects) {
       if (o.kind === "checkpoint" && atCheckpoint(f, o)) {
-        const cp = { x: o.pos.x, y: o.pos.y + STAND + 0.05, z: o.pos.z };
+        const cp = { x: o.pos.x, y: o.pos.y + 0.05, z: o.pos.z };
         const c = game.checkpoint;
         if (cp.x !== c.x || cp.y !== c.y || cp.z !== c.z) {
           game.checkpoint = cp;
@@ -211,7 +237,7 @@ export function stepGame(
         if (near(o.mover.pos, h.mover.pos, t.coop.reviveRadius)) {
           o.downed = 0;
           o.invuln = t.coop.reviveInvuln;
-          o.mover = { ...createMover(h.mover.pos), facing: o.mover.facing };
+          o.mover = { ...createMover(centerAt(f, heroTuning(o.hero))), facing: o.mover.facing };
           events.push({ type: "revive", hero: otherId, by: id });
           break;
         }
@@ -269,8 +295,8 @@ export function stepGame(
   if (team.length > 0 && team.every((h) => h.downed > 0) && team.every((h) => h.downed <= DOWN_FLOOR)) {
     team.forEach((h, i) => {
       h.downed = 0;
-      h.invuln = t.hazards.invulnTime;
-      h.mover = createMover(slotNear(game.checkpoint, i));
+      h.invuln = tuning.hazards.invulnTime;
+      h.mover = createMover(centerAt(slotNear(game.checkpoint, i), heroTuning(h.hero)));
       events.push({ type: "respawn", hero: ids[i] ?? "" });
     });
   }
@@ -278,7 +304,7 @@ export function stepGame(
   // Thrown crystals: simple ballistic flight with bouncy landings.
   for (const c of game.scattered) {
     c.age += dt;
-    c.vel.y -= t.air.gravity * dt;
+    c.vel.y -= tuning.air.gravity * dt;
     c.pos.x += c.vel.x * dt;
     c.pos.y += c.vel.y * dt;
     c.pos.z += c.vel.z * dt;
@@ -292,7 +318,7 @@ export function stepGame(
       }
     }
   }
-  game.scattered = game.scattered.filter((c) => c.age < t.scatter.life);
+  game.scattered = game.scattered.filter((c) => c.age < tuning.scatter.life);
   return events;
 }
 

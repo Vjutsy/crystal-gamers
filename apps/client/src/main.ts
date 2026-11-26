@@ -12,9 +12,9 @@ import { CreateDisc } from "@babylonjs/core/Meshes/Builders/discBuilder";
 import { CreatePolyhedron } from "@babylonjs/core/Meshes/Builders/polyhedronBuilder";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { Scene } from "@babylonjs/core/scene";
-import { initPhysics, PhysicsWorld, SIM_DT, testLevel, tuning } from "@cg/shared";
+import { type HeroId, heroes, initPhysics, isHeroId, PhysicsWorld, SIM_DT, testLevel } from "@cg/shared";
 import { maybeShowDebugPanel } from "./debug-panel.ts";
-import { capsuleHeight, FEET, HeroView, heroColors } from "./hero-view.ts";
+import { HeroView, heroFeet } from "./hero-view.ts";
 import { tr } from "./i18n.ts";
 import { bindKeyboard, readInput } from "./input.ts";
 import { buildCheckpoints, buildLevel, makeMaterial } from "./level-view.ts";
@@ -81,8 +81,6 @@ const crystalMeshes = new Map<number, Mesh>();
 const scatteredMeshes = new Map<number, Mesh>();
 
 // --- Own hero -----------------------------------------------------------------------
-const localHero = new HeroView(scene, shadows, heroColors[0] ?? "#2f6bff");
-
 // Silhouette: a flat-coloured copy drawn only where the hero is hidden behind level geometry
 // (depth test GREATER), so the isometric camera never loses the player.
 const silhouetteMat = makeMaterial(scene, "silhouette", "#ffffff");
@@ -91,16 +89,32 @@ silhouetteMat.emissiveColor = Color3.FromHexString("#7fb0ff");
 silhouetteMat.alpha = 0.55;
 silhouetteMat.depthFunction = Constants.GREATER;
 silhouetteMat.disableDepthWrite = true;
-const silhouette = localHero.mesh.clone("silhouette");
-silhouette.material = silhouetteMat;
-silhouette.renderingGroupId = 1;
-silhouette.parent = localHero.mesh;
-silhouette.position.set(0, 0, 0);
 // Keep group 0's depth buffer when drawing group 1, otherwise GREATER has nothing to compare with.
 scene.setRenderingAutoClearDepthStencil(1, false, false, false);
 
+/** Our own hero's view; rebuilt when we learn (or change) which hero we are. */
+let localHero: HeroView | null = null;
+function localHeroView(hero: HeroId): HeroView {
+  if (localHero?.hero === hero) return localHero;
+  localHero?.dispose();
+  const view = new HeroView(scene, shadows, hero);
+  const silhouette = view.mesh.clone("silhouette");
+  silhouette.material = silhouetteMat;
+  silhouette.renderingGroupId = 1;
+  silhouette.parent = view.mesh;
+  silhouette.position.set(0, 0, 0);
+  localHero = view;
+  return view;
+}
+
+/** Solo hero: ?hero=rubfir|nevetes|erl|emi (the lobby picker comes in SPEC-0003 step 2). */
+function soloHero(): HeroId {
+  const h = new URLSearchParams(location.search).get("hero");
+  return isHeroId(h) ? h : "rubfir";
+}
+
 // Blob shadow: in an isometric view it is the main cue for how high the hero is.
-const blob = CreateDisc("blob", { radius: tuning.capsule.radius * 1.1, tessellation: 24 }, scene);
+const blob = CreateDisc("blob", { radius: 0.45, tessellation: 24 }, scene);
 blob.rotation.x = Math.PI / 2;
 const blobMat = makeMaterial(scene, "blob", "#000000");
 blobMat.alpha = 0.35;
@@ -121,7 +135,7 @@ async function start() {
 
   const choice = await runLobby();
   const net = choice.kind === "online" ? choice.net : null;
-  const session: Session = net ? new NetSession(world, level, net) : new SoloSession(world, level);
+  const session: Session = net ? new NetSession(world, net) : new SoloSession(world, level, soloHero());
   if (net) showInvite(net.roomId);
   else $("status").textContent = tr.solo;
   canvas.focus();
@@ -139,17 +153,19 @@ async function start() {
     }
     const f = session.frame(acc / SIM_DT, dt);
     const { x, y, z } = f.me.pos;
+    if (!f.myHero) return; // waiting for the first snapshot
+    const feetY = y - heroFeet(f.myHero);
 
-    localHero.update(f.me);
-    localHero.setColor(heroColors[f.mySlot] ?? "#2f6bff");
-    localHero.setName(f.myName);
-    localHero.placeLabel(canvas);
+    const me = localHeroView(f.myHero);
+    me.update(f.me);
+    me.setName(f.myName);
+    me.placeLabel(canvas);
 
-    const groundY = world.surfaceBelow({ x, y: y - FEET + 0.05, z }, 12);
+    const groundY = world.surfaceBelow({ x, y: feetY + 0.05, z }, 12);
     blob.isVisible = groundY !== null;
     if (groundY !== null) {
-      const height = y - FEET - groundY;
-      const k = Math.max(0.35, 1 - height / 6);
+      const height = feetY - groundY;
+      const k = Math.max(0.35, 1 - height / 6) * (heroes[f.myHero].capsule.radius / 0.4);
       blob.position.set(x, groundY + 0.02, z);
       blob.scaling.set(k, k, k);
       blobMat.alpha = 0.35 * k;
@@ -160,11 +176,11 @@ async function start() {
     for (const o of f.others) {
       seen.add(o.id);
       let v = remoteViews.get(o.id);
-      if (!v) {
-        v = new HeroView(scene, shadows, heroColors[o.slot] ?? "#ffffff");
+      if (v?.hero !== o.hero) {
+        v?.dispose();
+        v = new HeroView(scene, shadows, o.hero);
         remoteViews.set(o.id, v);
       }
-      v.setColor(heroColors[o.slot] ?? "#ffffff");
       v.update(o.look);
       v.mesh.visibility *= o.connected ? 1 : 0.4;
       v.setName(o.connected ? o.name : `${o.name} ${tr.disconnected}`);
@@ -178,7 +194,7 @@ async function start() {
     }
 
     // Camera follows with smoothing.
-    follow.set(x, y - capsuleHeight / 2, z);
+    follow.set(x, feetY, z);
     Vector3.LerpToRef(camTarget, follow, 1 - 0.0001 ** dt, camTarget);
     camera.position.copyFrom(camTarget).addInPlace(camOffset);
 

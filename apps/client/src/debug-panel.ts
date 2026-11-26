@@ -1,4 +1,4 @@
-import { tuning } from "@cg/shared";
+import { HERO_IDS, heroes, isHeroId, tuning } from "@cg/shared";
 import { netSim } from "./net.ts";
 
 const STORAGE_KEY = "cg-tuning-v1";
@@ -95,6 +95,19 @@ export async function maybeShowDebugPanel() {
   netFolder.add(netSim, "lagMs", 0, 500, 10).name("затримка, мс");
   netFolder.add(netSim, "jitterMs", 0, 200, 5).name("джитер, мс");
   netFolder.add(netSim, "lossPct", 0, 20, 1).name("втрата знімків, %");
+
+  // Solo hero switch (reloads the page with ?hero=…). Online, the lobby decides.
+  const current = new URLSearchParams(location.search).get("hero");
+  const pick = { hero: isHeroId(current) ? current : "rubfir" };
+  const names = Object.fromEntries(HERO_IDS.map((id) => [heroes[id].name, id]));
+  gui
+    .add(pick, "hero", names)
+    .name("герой (соло)")
+    .onChange((id: string) => {
+      const url = new URL(location.href);
+      url.searchParams.set("hero", id);
+      location.href = url.toString();
+    });
 
   const actions = {
     copyJson: async () => {

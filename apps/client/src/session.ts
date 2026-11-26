@@ -1,8 +1,11 @@
 import {
   CorrectionSmoother,
+  centerAt,
   createGame,
   type GameState,
+  type HeroId,
   type HeroState,
+  heroTuning,
   type InputFrame,
   InputHistory,
   type Level,
@@ -22,14 +25,15 @@ import type { Net, Snapshot } from "./net.ts";
 
 /** What the renderer needs for one frame, the same for solo and online play. */
 export interface Frame {
+  /** Null until the server has told us who we are. */
+  myHero: HeroId | null;
   me: HeroLook;
-  mySlot: number;
   myName: string | null;
   crystals: number;
   taken(id: number): boolean;
   scattered: { id: number; pos: Vec3; fading: boolean }[];
   checkpoint: Vec3;
-  others: { id: string; name: string; slot: number; connected: boolean; look: HeroLook }[];
+  others: { id: string; name: string; hero: HeroId; connected: boolean; look: HeroLook }[];
   /** New HUD status line, or null to keep the old one. */
   status: string | null;
 }
@@ -54,8 +58,9 @@ export class SoloSession implements Session {
   constructor(
     private world: PhysicsWorld,
     level: Level,
+    hero: HeroId,
   ) {
-    this.game = createGame(world, level, [SoloSession.ME]);
+    this.game = createGame(world, level, [SoloSession.ME], [hero]);
     this.prev = this.hero().mover;
   }
 
@@ -72,8 +77,8 @@ export class SoloSession implements Session {
     const h = this.hero();
     const g = this.game;
     return {
+      myHero: h.hero,
       me: { ...h.mover, pos: lerp(this.prev.pos, h.mover.pos, alpha), downed: h.downed, invuln: h.invuln },
-      mySlot: 0,
       myName: null,
       crystals: h.crystals,
       taken: (id) => g.crystals.find((c) => c.id === id)?.taken ?? false,
@@ -93,7 +98,8 @@ const INTERP_DELAY_MS = 100;
  * every snapshot; other heroes are interpolated between snapshots.
  */
 export class NetSession implements Session {
-  private body: number;
+  /** Our own hero's physics body, made once the server says which hero we are. */
+  private body: { id: number; hero: HeroId } | null = null;
   private pred: MoverState | null = null;
   private prev: MoverState | null = null;
   private seq = 0;
@@ -104,10 +110,15 @@ export class NetSession implements Session {
 
   constructor(
     private world: PhysicsWorld,
-    level: Level,
     private net: Net,
-  ) {
-    this.body = world.addCharacter(level.spawn);
+  ) {}
+
+  private bodyFor(hero: HeroId): number {
+    if (this.body?.hero !== hero) {
+      if (this.body) this.world.removeCharacter(this.body.id);
+      this.body = { id: this.world.addCharacter({ x: 0, y: -100, z: 0 }, heroTuning(hero).capsule), hero };
+    }
+    return this.body.id;
   }
 
   private mine() {
@@ -120,8 +131,17 @@ export class NetSession implements Session {
     this.net.send(this.seq, input);
     const me = this.mine();
     if (!this.pred || !this.snap || !me || me.downed > 0) return;
+    const t = heroTuning(me.hero);
     this.prev = this.pred;
-    this.pred = stepMover(this.world, this.body, this.pred, input, SIM_DT, this.snap.checkpoint);
+    this.pred = stepMover(
+      this.world,
+      this.bodyFor(me.hero),
+      this.pred,
+      input,
+      SIM_DT,
+      centerAt(this.snap.checkpoint, t),
+      t,
+    );
   }
 
   private receive(s: Snapshot) {
@@ -148,13 +168,15 @@ export class NetSession implements Session {
       this.smoother.offset = { x: 0, y: 0, z: 0 };
       return;
     }
+    const t = heroTuning(me.hero);
     const corrected = replayMover(
       this.world,
-      this.body,
+      this.bodyFor(me.hero),
       me.mover,
       this.history.pending(),
       SIM_DT,
-      s.checkpoint,
+      centerAt(s.checkpoint, t),
+      t,
     );
     if (this.pred && this.prev) {
       // Keep the picture continuous: the jump becomes an offset that fades out.
@@ -193,7 +215,7 @@ export class NetSession implements Session {
         others.push({
           id,
           name: p.name,
-          slot: p.slot,
+          hero: p.hero,
           connected: p.connected,
           look: { ...p.mover, pos: at, downed: p.downed, invuln: p.invuln },
         });
@@ -201,6 +223,7 @@ export class NetSession implements Session {
     }
 
     return {
+      myHero: me?.hero ?? null,
       me: {
         pos: { x: pos.x + o.x, y: pos.y + o.y, z: pos.z + o.z },
         spinCharge: pred?.spinCharge ?? -1,
@@ -208,7 +231,6 @@ export class NetSession implements Session {
         downed: me?.downed ?? 0,
         invuln: me?.invuln ?? 0,
       },
-      mySlot: me?.slot ?? 0,
       myName: me?.name ?? null,
       crystals: me?.crystals ?? 0,
       taken: (id) => s?.taken[id] ?? false,
